@@ -1,0 +1,20 @@
+# Experiment data & model weights (large binaries, downloaded not committed)
+experiments/*/data/
+experiments/NomNaOCR/
+*.mlmodel
+*.h5
+*.pb
+*.ckpt
+*.pt
+*.pth
+checkpoints/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
