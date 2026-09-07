@@ -15,6 +15,17 @@ replaces the README's earlier "check the naming convention once downloaded" plac
 
 Usage (run on the host, no Docker needed):
     python scripts/build_manifest.py --dataset-root /path/to/NomNaOCR --num-pages 15
+
+IMPORTANT: patches are restricted to NomNaOCR's own held-out split (Patches/Validate.txt), not
+just any patch belonging to a chosen page. An earlier version of this script sampled patches
+without regard to train/validate membership; checking afterwards showed 144/186 (77%) of the
+sampled patches were actually in NomNaOCR's *training* set (Patches/Train.txt), which would
+have made NomNaOCR's Phase 0 accuracy mostly a measure of memorization, not generalization -
+exactly what CLAUDE.md's "always check held-out test performance" rule warns about. The dataset
+splits patches, not whole pages, into train/validate (a single page can have some patches in
+each), so filtering to Validate.txt necessarily makes "pages" here mean "the held-out patches
+belonging to that page," not the full page transcription - see build_manifest.py's docstring
+on `ground_truth` below for what this means for scoring.
 """
 import argparse
 import json
@@ -25,9 +36,11 @@ import shutil
 IMAGE_EXT = ".jpg"
 
 
-def load_all_labels(all_txt_path: pathlib.Path) -> dict[str, str]:
+def load_labels(labels_path: pathlib.Path) -> dict[str, str]:
+    """Parses a NomNaOCR `work/patchfile.jpg<TAB>text` label file (used for both All.txt and
+    the Train.txt/Validate.txt split files, which share this format)."""
     labels = {}
-    with open(all_txt_path, "r", encoding="utf-8") as f:
+    with open(labels_path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.rstrip("\n")
             if not line:
@@ -41,9 +54,12 @@ def sanitize(work: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "", work)
 
 
-def find_candidate_pages(dataset_root: pathlib.Path):
-    """Yield (work, page_stem, page_img_path, [patch_paths in reading order]) for every page
-    whose gts file and full set of numbered patches are all present on disk."""
+def find_candidate_pages(dataset_root: pathlib.Path, validate_keys: set[str], min_held_out: int = 3):
+    """Yield (work, page_stem, page_img_path, [held-out patch_paths in reading order]) for
+    every page with a gts file, a page image, and at least `min_held_out` patches that are (a)
+    present on disk and (b) in NomNaOCR's own Validate.txt split - i.e. patches CRNNxCTC was
+    NOT trained on, so scoring it against these is a fair generalization test rather than a
+    memorization check."""
     pages_dir = dataset_root / "Pages"
     patches_dir = dataset_root / "Patches"
     candidates = []
@@ -61,9 +77,13 @@ def find_candidate_pages(dataset_root: pathlib.Path):
             lines = [line for line in gts_file.read_text(encoding="utf-8").splitlines() if line.strip()]
             if not lines:
                 continue
-            patch_paths = [patches_dir / work / f"{page_stem}_{i}{IMAGE_EXT}" for i in range(len(lines))]
-            if all(p.exists() for p in patch_paths):
-                candidates.append((work, page_stem, page_img, patch_paths))
+            held_out_patches = []
+            for i in range(len(lines)):
+                patch_path = patches_dir / work / f"{page_stem}_{i}{IMAGE_EXT}"
+                if patch_path.exists() and f"{work}/{patch_path.name}" in validate_keys:
+                    held_out_patches.append(patch_path)
+            if len(held_out_patches) >= min_held_out:
+                candidates.append((work, page_stem, page_img, held_out_patches))
     return candidates
 
 
@@ -76,10 +96,13 @@ def main() -> None:
     args = parser.parse_args()
 
     all_txt = args.dataset_root / "Patches" / "All.txt"
+    validate_txt = args.dataset_root / "Patches" / "Validate.txt"
     assert all_txt.exists(), f"missing {all_txt}"
-    labels = load_all_labels(all_txt)
+    assert validate_txt.exists(), f"missing {validate_txt}"
+    labels = load_labels(all_txt)
+    validate_keys = set(load_labels(validate_txt))
 
-    candidates = find_candidate_pages(args.dataset_root)
+    candidates = find_candidate_pages(args.dataset_root, validate_keys)
     if not candidates:
         raise SystemExit(f"no usable pages found under {args.dataset_root}")
 

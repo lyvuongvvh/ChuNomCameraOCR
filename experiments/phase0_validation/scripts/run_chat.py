@@ -15,8 +15,30 @@ import pathlib
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".tif", ".tiff")
 
+# CHAT's own demo images are ~1011x1433px; NomNaOCR's page scans are ~290x450px (each of a
+# page's ~9-24 text columns gets only ~15-30px of width). At native resolution CHAT's
+# segmentation+recognition produced degenerate, near-constant output on every sample page -
+# confirmed (via a one-off manual test, not exhaustively tuned) to be a resolution problem,
+# not a model or code bug: upscaling a sample page 4x turned degenerate garbage into
+# substantially correct text. This target is chosen to match CHAT's own demo image scale, not
+# derived from a systematic sweep - see README.md's "Finding: CHAT needs higher-resolution
+# input" for the investigation.
+MIN_LONG_SIDE = 1600
+
 _seg_model = None
 _rec_model = None
+
+
+def _upscale_if_small(img, target_long_side: int = MIN_LONG_SIDE):
+    """Upscale small page scans up to target_long_side (never downscales)."""
+    from PIL import Image
+
+    long_side = max(img.size)
+    if long_side >= target_long_side:
+        return img
+    scale = target_long_side / long_side
+    new_size = (round(img.width * scale), round(img.height * scale))
+    return img.resize(new_size, Image.LANCZOS)
 
 
 def _init_worker(seg_model_path: str, rec_model_path: str) -> None:
@@ -40,6 +62,7 @@ def _process_one(img_path: pathlib.Path):
 
     print(f"[chat] {img_path.name}", flush=True)
     img = Image.open(img_path)
+    img = _upscale_if_small(img)
     img = img.convert("L")
     # Binarize but keep mode "L" (uint8, values 0/255), not mode "1": PIL's mode "1" is
     # bit-packed and numpy reads it back as a bool array, which silently breaks

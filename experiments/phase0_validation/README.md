@@ -16,17 +16,25 @@ kept out of any future production pipeline.
       were verified against synthetic data (no real weights yet - see below). See "Bugs found
       during verification" below for what this shook out.
 - [x] NomNaOCR dataset downloaded from Kaggle and `data/manifest.json` built - 15 sample pages
-      across 7 works, via `scripts/build_manifest.py` (see "Build the manifest" below).
-- [x] NomNaOCR pretrained CRNNxCTC weights downloaded and run against the 186 sample patches -
-      predictions closely match ground truth (e.g. `史以記事也而` matched exactly on one page).
-      This confirms the vocab-reconstruction approach (`nomnaocr_lib/vocab.py`) is correct.
+      across 9 works, using only patches from NomNaOCR's own held-out validation split (see
+      "Finding: sample was contaminated with training data" below for why this matters), via
+      `scripts/build_manifest.py`.
+- [x] NomNaOCR pretrained CRNNxCTC weights downloaded and run against the 62 held-out sample
+      patches. This also confirms the vocab-reconstruction approach (`nomnaocr_lib/vocab.py`)
+      is correct.
 - [x] `data/hanzi_charset.txt` built (44,348 characters, via `scripts/build_hanzi_charset.py`).
-- [x] CHAT run against the 15 sample pages - but at native resolution the output is degenerate
-      (near-constant repeated characters) on every page. Root-caused to a resolution mismatch,
-      not a code bug - see "Finding: CHAT needs higher-resolution input" below. A preprocessing
-      fix (upscaling) is confirmed to work on a single page and is being applied to the full set
-      next.
-- [ ] `results.md` generated - blocked on rerunning CHAT with the upscaling fix.
+- [x] CHAT run against the 15 sample pages, with an upscaling preprocessing fix (see "Finding:
+      CHAT needs higher-resolution input" below) - native-resolution NomNaOCR pages otherwise
+      produce degenerate output from CHAT.
+- [x] `results.md` generated:
+
+  | Model | Correct Han chars | Total Han chars | Accuracy |
+  |---|---|---|---|
+  | CHAT (pretrained) | 151 | 679 | **22.2%** |
+  | NomNaOCR (CRNNxCTC, pretrained) | 589 | 679 | **86.7%** |
+
+  See `results.md` for the per-page breakdown and "Phase 0 conclusion" below for what this
+  means for CLAUDE.md's Phase 1 go/no-go decision.
 
 ## Bugs found during verification
 
@@ -81,8 +89,44 @@ per-line alignment.
 Given this, running CHAT "as-is" at NomNaOCR's native resolution would produce a badly biased,
 near-zero result that doesn't reflect the model's real capability against Nom pages. Upscaling
 before segmentation is a preprocessing step, not a model change, so applying it uniformly to
-all sample pages is still consistent with Phase 0's "as-is, no fine-tuning" requirement - this
-is the fix being rolled out next, before final Chu Han comparison numbers are generated.
+all sample pages is still consistent with Phase 0's "as-is, no fine-tuning" requirement.
+`MIN_LONG_SIDE` in `run_chat.py` controls this (never downscales, so it's a no-op on
+already-large images like CHAT's own demo assets).
+
+## Finding: sample was contaminated with training data
+
+The first full run produced NomNaOCR: 97.3% (2162/2223) vs. CHAT: 25.9% (576/2223). Before
+trusting that, per CLAUDE.md's "always check held-out test performance" rule, I checked whether
+the 15 sampled pages' patches were in NomNaOCR's own train/validate split
+(`Patches/Train.txt` / `Patches/Validate.txt`) - **144 of the 186 sampled patches (77%) were in
+NomNaOCR's training set.** Its 97.3% figure was therefore mostly a memorization check, not a
+fair generalization measure - exactly the failure mode CLAUDE.md warns against, and it would
+have made the CHAT-vs-NomNaOCR comparison meaningless (CHAT was never trained on any of this
+data, so its number is unaffected regardless of split, but NomNaOCR's was inflated).
+
+The dataset splits individual *patches* into train/validate, not whole pages - a single page's
+patches are usually split across both - so there's no way to pick fully-held-out whole pages.
+`build_manifest.py` was rewritten to filter each page down to only the patches present in
+`Patches/Validate.txt` (requiring at least 3 held-out patches per page to keep enough signal),
+so `ground_truth` per page now means "the held-out patches belonging to that page" rather than
+the full page transcription. This doesn't disadvantage CHAT (it still gets scored on its full
+page prediction against this now-smaller ground truth) but makes NomNaOCR's score an honest
+held-out measurement. Rerunning on the corrected sample (15 pages, 62 held-out patches) gave
+the real Phase 0 result below - NomNaOCR's accuracy dropped from 97.3% to 86.7% once
+memorization was excluded, while CHAT's stayed roughly the same (25.9% -> 22.2%, consistent
+with it never having trained on any of this data either way).
+
+## Phase 0 conclusion
+
+**NomNaOCR's pretrained CRNNxCTC (86.7%) substantially outperforms CHAT's pretrained Kraken
+model (22.2%) at Chu Han character recognition**, even on the character subset CHAT was
+expected to have an inherent advantage on as a large-vocabulary Chinese OCR model. Per
+CLAUDE.md's Phase 0 gate ("Only if step 1 shows a real improvement, proceed to building the
+Kraken fine-tuning pipeline"), this result does not support moving to Phase 1 as originally
+scoped - CHAT does not show the improvement the hybrid fine-tuning hypothesis depends on. This
+should be discussed before any Phase 1 work starts; see "Known simplifications" below for the
+caveats this conclusion is subject to (scoring method, Chu Han classification heuristic, and
+sample size - 15 pages / 679 Han characters).
 
 ## Why this needs your involvement
 
@@ -115,19 +159,22 @@ NomNaOCR/
 
 ## 2. Build the manifest (run on the host, no Docker needed)
 
-`scripts/build_manifest.py` picks sample pages, copies their page images and patches into
-`data/sample_pages/` / `data/sample_patches/`, and writes `data/manifest.json` - all in one
-step, using the confirmed layout above (previously this was a manual, error-prone step; the
-prior version of this README asked you to inspect patch filenames by hand to work out reading
-order, which turned out to be unnecessary once the actual convention was inspected):
+`scripts/build_manifest.py` picks sample pages, copies their page images and the page's
+held-out patches (per NomNaOCR's own `Patches/Validate.txt` - see "Finding: sample was
+contaminated with training data" above for why this matters) into `data/sample_pages/` /
+`data/sample_patches/`, and writes `data/manifest.json` - all in one step, using the confirmed
+layout above (previously this was a manual, error-prone step; an earlier version of this
+README asked you to inspect patch filenames by hand to work out reading order, which turned
+out to be unnecessary once the actual convention was inspected):
 
 ```bash
 python scripts/build_manifest.py --dataset-root experiments/NomNaOCR --num-pages 15
 ```
 
-This only reads `Patches/All.txt` for ground-truth text - it does not copy or need the other
-~38K patch images, since `nomnaocr_lib/vocab.py` (used later, for vocab reconstruction) only
-reads label text, never image files.
+Ground-truth text still comes from `Patches/All.txt` (it has the same text as
+`Patches/Validate.txt` for held-out patches; `All.txt` is used because it's already loaded) -
+this does not copy or need the ~38K non-held-out patch images, since `nomnaocr_lib/vocab.py`
+(used later, for vocab reconstruction) only reads label text, never image files.
 
 ## 3. Download NomNaOCR's pretrained CRNNxCTC weights (Google Drive)
 
@@ -156,9 +203,9 @@ docker run --rm -v "$PWD:/workspace" phase0-chat \
     --images data/sample_pages --models data/chat_models/models --out data/predictions_chat.json
 ```
 
-**Note:** at NomNaOCR's native page resolution this produces degenerate output - see "Finding:
-CHAT needs higher-resolution input" above. An upscaling preprocessing step is being added to
-this script; once in place this section will document the flag needed to enable it.
+`run_chat.py` upscales small pages automatically (`MIN_LONG_SIDE`) - see "Finding: CHAT needs
+higher-resolution input" above for why this is necessary against NomNaOCR's native-resolution
+scans.
 
 ## 6. Run NomNaOCR on the sample patches (Docker)
 
@@ -179,7 +226,7 @@ python scripts/report.py
 ```
 
 Produces `results.md` with the CHAT-vs-NomNaOCR Chu Han accuracy numbers CLAUDE.md's Phase 0
-step needs.
+step needs - see "Phase 0 conclusion" above for the current result and what it means.
 
 ## Known simplifications (flagged, not verified)
 
@@ -195,3 +242,7 @@ step needs.
   `os.path.getsize` existence check (which would otherwise require the full 38K-image set on
   disk just to decode predictions). Expected to match the training-time vocab in practice; not
   independently verified against the original weights' training run.
+- **Sample size** is small - 15 pages, 679 Chu Han characters after restricting to NomNaOCR's
+  held-out split (see "Finding: sample was contaminated with training data"). Large enough to
+  show a clear gap between the two models here, but not a substitute for Phase 2's evaluation
+  against NomNaOCR's full held-out test set.
