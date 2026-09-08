@@ -43,6 +43,10 @@ def main() -> None:
     parser.add_argument("--charset", default="data/hanzi_charset.txt", type=pathlib.Path)
     parser.add_argument("--chat-predictions", default="data/predictions_chat.json", type=pathlib.Path)
     parser.add_argument("--nomnaocr-predictions", default="data/predictions_nomnaocr.json", type=pathlib.Path)
+    parser.add_argument("--finetuned-predictions", default=None, type=pathlib.Path,
+                         help="Optional: predictions_chat.json-shaped file from a fine-tuned "
+                              "CHAT checkpoint (run_chat.py --rec-model ...), for the fine-tuning "
+                              "trial's three-way comparison. Omit for the standard Phase 0 two-way run.")
     parser.add_argument("--out", default="data/comparison.json", type=pathlib.Path)
     args = parser.parse_args()
 
@@ -50,6 +54,10 @@ def main() -> None:
     charset = load_charset(args.charset)
     chat_preds = json.loads(args.chat_predictions.read_text(encoding="utf-8"))
     nomnaocr_preds = json.loads(args.nomnaocr_predictions.read_text(encoding="utf-8"))
+    finetuned_preds = (
+        json.loads(args.finetuned_predictions.read_text(encoding="utf-8"))
+        if args.finetuned_predictions else None
+    )
 
     per_page = {}
     for page_id, page in manifest.items():
@@ -67,6 +75,12 @@ def main() -> None:
             "chat_correct": chat_correct,
             "nomnaocr_correct": nomnaocr_correct,
         }
+
+        if finetuned_preds is not None:
+            finetuned_text = finetuned_preds.get(page["page_image"], {}).get("full_text", "")
+            finetuned_correct, total_check = bag_correct(finetuned_text, ground_truth, charset)
+            assert total == total_check
+            per_page[page_id]["finetuned_correct"] = finetuned_correct
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(per_page, ensure_ascii=False, indent=2), encoding="utf-8")

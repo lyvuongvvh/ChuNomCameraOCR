@@ -1,6 +1,8 @@
 # Experiment data & model weights (large binaries, downloaded not committed)
 experiments/*/data/
 experiments/NomNaOCR/
+experiments/phase0_validation/kaggle_dataset/
+experiments/phase0_validation/kaggle_output/
 *.mlmodel
 *.h5
 *.pb

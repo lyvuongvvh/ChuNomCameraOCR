@@ -98,6 +98,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--images", required=True, type=pathlib.Path, help="Dir of sample page images")
     parser.add_argument("--models", required=True, type=pathlib.Path, help="Dir containing chat_seg.mlmodel and chat_rec.mlmodel")
+    parser.add_argument("--rec-model", type=pathlib.Path, default=None,
+                         help="Recognition model override (default: <models>/chat_rec.mlmodel) - "
+                              "e.g. chat_rec_finetuned.mlmodel to evaluate the fine-tuning trial")
     parser.add_argument("--out", required=True, type=pathlib.Path, help="Output JSON path")
     parser.add_argument("--workers", type=int, default=None,
                          help="Pages to process in parallel (default: min(page count, CPU count))")
@@ -109,7 +112,7 @@ def main() -> None:
         raise SystemExit("kraken is not installed. Run this script inside the chat docker image.")
 
     seg_model_path = args.models / "chat_seg.mlmodel"
-    rec_model_path = args.models / "chat_rec.mlmodel"
+    rec_model_path = args.rec_model or (args.models / "chat_rec.mlmodel")
     assert seg_model_path.exists(), f"missing {seg_model_path}"
     assert rec_model_path.exists(), f"missing {rec_model_path}"
 
@@ -118,7 +121,7 @@ def main() -> None:
         raise SystemExit(f"no images found in {args.images}")
 
     workers = args.workers or min(len(image_paths), multiprocessing.cpu_count())
-    print(f"Processing {len(image_paths)} pages with {workers} worker process(es)")
+    print(f"Processing {len(image_paths)} pages with {workers} worker process(es), rec model: {rec_model_path}")
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     results = {}

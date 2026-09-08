@@ -35,6 +35,11 @@ kept out of any future production pipeline.
 
   See `results.md` for the per-page breakdown and "Phase 0 conclusion" below for what this
   means for CLAUDE.md's Phase 1 go/no-go decision.
+- [x] **Fine-tuning trial** (Kaggle GPU): fine-tuned CHAT for 10 epochs on ~2000 lines of
+      NomNaOCR's training split, to check whether Phase 0's result was partly a fixable pipeline
+      issue rather than a fundamental gap. **Result: it got worse, not better** (22.2% -> 4.1%,
+      likely catastrophic forgetting) - this reinforces, not undermines, the Phase 0 conclusion
+      below. See "Fine-tuning trial" and "Fine-tuning trial conclusion" below.
 
 ## Bugs found during verification
 
@@ -127,6 +132,168 @@ scoped - CHAT does not show the improvement the hybrid fine-tuning hypothesis de
 should be discussed before any Phase 1 work starts; see "Known simplifications" below for the
 caveats this conclusion is subject to (scoring method, Chu Han classification heuristic, and
 sample size - 15 pages / 679 Han characters).
+
+## Fine-tuning trial (Phase 0 follow-up)
+
+Phase 0's conclusion above is a real result, but CHAT's 22.2% partly reflects a pipeline
+mismatch (see "Finding: CHAT needs higher-resolution input"), not necessarily a hard capability
+ceiling. Before treating "don't build Phase 1" as final, this is a cheap directional check:
+fine-tune CHAT's pretrained recognizer on a small slice of NomNaOCR's own *training* data (never
+touching the held-out validation patches used for Phase 0's benchmark) and see whether that
+closes any of the gap. This is **not** Phase 1 - it's a low-effort trial to inform the Phase 0
+go/no-go decision, small enough to stay in `experiments/`.
+
+**Why Kaggle**: fine-tuning needs a GPU; this machine doesn't have one, and kraken's training
+path (`ketos train`) is slow on CPU. Kaggle Notebooks give free GPU time (T4/P100) with no local
+setup, at the cost of needing the training data and base model uploaded as a Kaggle Dataset and
+the job run through the Kaggle API rather than locally.
+
+### Training data: `scripts/build_finetune_data.py`
+
+kraken's `ketos train` has two dataset backends: a simple `path` mode that assumes pre-cropped,
+already-horizontal line images (no geometric correction), and a `page`/`xml`/`alto` mode that
+takes real baseline geometry and dewarps/rotates each line via
+`kraken.lib.segmentation.extract_polygons` - the same code path used at real inference time. We
+use the latter for correctness (avoids guessing a rotation direction by hand, and guarantees the
+training-time and inference-time geometry handling match), which means generating PageXML rather
+than plain cropped images.
+
+For each vertical Nom/Han column NomNaOCR already gives as an axis-aligned quadrilateral
+(`x1,y1,...,x4,y4` in its `gts/*.txt` files, p0=top-left/p1=top-right/p2=bottom-right/
+p3=bottom-left), the script derives a synthetic baseline as
+`[midpoint(p0,p1), midpoint(p2,p3)]` (top-mid to bottom-mid) - verified by hand that this
+produces correctly oriented, upright, right-order-of-reading dewarped crops via kraken's own
+`extract_polygons`. Pages are upscaled the same way `run_chat.py` does (`MIN_LONG_SIDE`), and
+only lines whose page appears in NomNaOCR's own `Patches/Train.txt` are included - anything in
+`Patches/Validate.txt` (Phase 0's held-out set) is explicitly excluded, so the before/after
+comparison stays apples-to-apples once a fine-tuned model exists:
+
+```bash
+python scripts/build_finetune_data.py --dataset-root experiments/NomNaOCR \
+    --out-dir data/finetune_data --max-patches 2000
+```
+
+This produced 215 PageXML files covering 2004 training lines
+(`data/finetune_data/_build_info.json` has the exact counts).
+
+### Running the trial on Kaggle
+
+- `kaggle_dataset/` (not committed - upload staging only) bundles `finetune_data/` and CHAT's
+  `chat_rec.mlmodel`, uploaded as a private Kaggle Dataset
+  (`lyvuongvvh/chat-chunom-finetune-trial`) via `kaggle datasets create -p kaggle_dataset
+  --dir-mode zip`.
+- `chat_finetune_trial.ipynb` is the training notebook: checks GPU availability, lists the
+  dataset input files, then runs
+  `ketos train -f page -i chat_rec.mlmodel --resize union -d cuda:0 -N 10 -q dumb -p 0.9
+  --workers 2 -o chat_finetuned <xml files>`. `--resize union` extends CHAT's Chinese-only
+  codec with whatever new characters appear in the Nom training data, instead of replacing it.
+- `kernel-metadata.json` configures the Kaggle kernel (GPU + internet enabled, the dataset above
+  attached as an input) and is pushed via `kaggle kernels push -p .`.
+
+### Issues hit getting this running
+
+- **Kaggle's newer token-based auth** (`KGAT_`-prefixed tokens, from the newer
+  kaggle.com/settings flow) isn't fully interchangeable with the legacy `kaggle.json
+  {username, key}` format for write operations - `kaggle datasets create` failed with
+  "Authentication required" even with a structurally valid `kaggle.json`, while read-only calls
+  (`datasets list`) worked fine with it. Fixed by using `~/.kaggle/access_token` (a plain-text
+  file holding just the raw token) instead, per the error message's own suggestion.
+- **Kernel/dataset slug collision**: the kernel and dataset can't share the same `id` slug -
+  first push failed with `409 Conflict`. Fixed by giving the kernel a distinct id. A second,
+  stricter `409` later came from the kernel's *title* not matching the slug Kaggle derives from
+  it ("title does not resolve to the specified id") - fixed by renaming the kernel id to match
+  the title-derived slug (`chat-chunom-finetune-trial-notebook`).
+- **First real run (kernel version 1) completed but never actually trained anything**: despite
+  `enable_internet: true` and `enable_gpu: true` in `kernel-metadata.json`, the run had no
+  internet (`pip install kraken` failed with DNS resolution errors, so `ketos` was never
+  installed) and no GPU (`torch` reported as CPU-only, `cuda available: False`); the attached
+  dataset also didn't mount (0 training files found). Root cause: the Kaggle account hadn't
+  completed **phone verification**, which Kaggle silently requires for internet/GPU access in
+  kernels (it downgrades rather than erroring). This is an account-level fix only the account
+  owner can do, at kaggle.com/settings.
+- **Kernel version 2** (post phone-verification) got internet and GPU working (confirmed: real
+  PyPI package listing, `cuda available: True`, Tesla P100), but `kraken==4.3.13` failed to
+  build at all: `pip install` hit `AttributeError: module 'pkgutil' has no attribute
+  'ImpImporter'` from setuptools' own build backend - a genuine incompatibility, not a version
+  gate, since kraken 4.3.13's packaging predates Python 3.12 (confirmed locally: `--ignore-requires-python`
+  doesn't help, the code itself doesn't build on 3.12). Also revealed the dataset wasn't
+  mounting where expected.
+- **Kernel version 3** tried creating a `conda` environment (Python 3.10) to sidestep the Python
+  3.12 issue, but Kaggle's image has no `conda` on `PATH` at all. Its diagnostics did solve the
+  dataset mystery, though: private Kaggle datasets mount under
+  `/kaggle/input/datasets/<username>/<slug>/`, not `/kaggle/input/<slug>/` as assumed - fixed by
+  switching `chat_finetune_trial.ipynb`'s dataset lookup to a recursive `os.walk` search for
+  `chat_rec.mlmodel` instead of a hardcoded path.
+- **Kernel version 4** installed a self-contained Miniconda (Python 3.10) instead of relying on
+  system conda - but two things went wrong: (a) `conda create` failed with
+  `CondaToSNonInteractiveError` (newer conda requires non-interactively accepting the default
+  channels' Terms of Service before it will use them - fixed with `conda tos accept
+  --override-channels --channel ...`), and (b) Miniconda was installed under `/kaggle/working/`,
+  which Kaggle treats as kernel *output* - every `kaggle kernels output` call afterwards tried to
+  re-download the entire ~1GB+ toolchain (thousands of files), making log/checkpoint retrieval
+  painfully slow. Fixed by moving the install to `/opt/miniconda` and by using
+  `kaggle kernels output --file-pattern '...'` to fetch only the log and `.mlmodel` files going
+  forward.
+- **Kernel version 5** (ToS + `/opt` fixes) got the conda env created and `ketos train` actually
+  launched - genuine progress (GPU trainer initialized, model built, 215 pages found) - but
+  crashed immediately with `ModuleNotFoundError: No module named 'pkg_resources'`. kraken's
+  pinned (old) `pytorch_lightning` still does `pkg_resources.declare_namespace(...)`, a pattern
+  recent `setuptools` (>=81) dropped support for entirely; a fresh `pip install kraken` pulls the
+  newest setuptools by default. Fixed with `pip install "setuptools<81"` after the kraken install.
+- **Kernel version 6** got past that and into real trainer setup (model summary, GPU confirmed)
+  before crashing again: `IndexError: pop from empty list` inside `rich.console.Console.clear_live()`,
+  called from `pytorch_lightning`'s `RichProgressBar` - a known incompatibility between old
+  `pytorch_lightning` and `rich>=13.4`, which changed `clear_live()`'s behavior. Fixed with
+  `pip install "rich<13.4"`.
+- **Kernel version 7 succeeded.** `ketos train` ran all 10 epochs cleanly
+  (`Trainer.fit stopped: max_epochs=10 reached`) in about 28 minutes on a Tesla P100, producing
+  one checkpoint per epoch (`chat_finetuned_0.mlmodel` .. `chat_finetuned_9.mlmodel`, ~42.8MB
+  each). Kraken's own internal validation accuracy climbed noisily from 0% at epoch 0 to 19.3%
+  by epoch 9 (the best and final epoch) - still trending upward at epoch 10, suggesting the model
+  hadn't converged on this small (~2000-line) training set. The final epoch's checkpoint
+  (`chat_finetuned_9.mlmodel`) was used for the comparison below.
+
+### Result
+
+`chat_finetuned_9.mlmodel` was copied to `data/chat_models/models/chat_rec_finetuned.mlmodel`
+and run against the exact same 15-page/62-patch held-out sample used for the rest of Phase 0
+(`data/sample_pages/`, `data/manifest.json` - not regenerated), via
+`run_chat.py --rec-model data/chat_models/models/chat_rec_finetuned.mlmodel`:
+
+| Model | Correct Han chars | Total Han chars | Accuracy |
+|---|---|---|---|
+| CHAT (pretrained, as-is) | 151 | 679 | 22.2% |
+| **CHAT (fine-tuned trial)** | **28** | **679** | **4.1%** |
+| NomNaOCR (CRNNxCTC, pretrained) | 589 | 679 | 86.7% |
+
+**Fine-tuning made CHAT substantially worse, not better** - accuracy dropped from 22.2% to
+4.1%, and the fine-tuned model scored lower than the original on 13 of the 15 sample pages (see
+`results.md` for the per-page breakdown). This is not noise - it's a large, consistent
+regression across nearly the whole sample.
+
+## Fine-tuning trial conclusion
+
+The most likely explanation is **catastrophic forgetting**: 10 epochs of full-network
+fine-tuning on a small (~2000-line), narrow slice of text (5 chapters of one work,
+Đại Việt Sử Ký Toàn Thư, plus fragments of two others) overwrote weights CHAT had learned from
+its original 1.7M-line, 16,000+ character training corpus, without enough data or epochs to
+learn a comparably general replacement. This is consistent with kraken's own internal
+validation accuracy only reaching 19.3% after 10 epochs (measured on this same narrow training
+distribution) - the fine-tuned model was still a weak recognizer even on data close to what it
+was trained on, let alone CHAT's original breadth. `--resize union`, which extends the codec
+with new Nom characters rather than replacing it, means this isn't a vocabulary-mismatch
+artifact either - the regression happened on characters CHAT already knew.
+
+This does not resurrect the hybrid fine-tuning hypothesis. If anything, it strengthens the
+Phase 0 conclusion above: not only does CHAT not outperform NomNaOCR out-of-the-box, but a
+naive attempt to fine-tune it in the direction the hypothesis requires made it meaningfully
+worse with the resources available here. A more careful fine-tuning setup (frozen backbone
+layers, a much smaller learning rate, many more epochs, and/or substantially more Nom training
+data than this trial's ~2000 lines) might behave differently, but that is a materially larger
+effort than this "quick trial" was scoped for, and isn't attempted here. **Recommendation:
+don't pursue Phase 1 (the hybrid CHAT+NomNaOCR fine-tuning pipeline) as originally scoped** -
+NomNaOCR's own pretrained model remains the best available baseline for Chu Han recognition on
+this data by a wide margin (86.7% vs. 22.2%/4.1%).
 
 ## Why this needs your involvement
 

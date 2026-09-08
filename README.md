@@ -74,8 +74,9 @@ This means:
 
 ## 5. Roadmap
 
-- [ ] **Phase 0 — Validate the hypothesis.** Confirm that CHAT's pretrained model, run as-is, actually recognizes a meaningfully higher number of the Hán-character portion of Nôm sample pages than NomNaOCR's own models do. This should be checked *before* investing in the fine-tuning pipeline.
-- [ ] **Phase 1 — Fine-tuning pipeline.** Adapt Kraken's fine-tuning tooling to continue training CHAT's model on NomNaOCR's labeled dataset.
+- [x] **Phase 0 — Validate the hypothesis.** Confirm that CHAT's pretrained model, run as-is, actually recognizes a meaningfully higher number of the Hán-character portion of Nôm sample pages than NomNaOCR's own models do. This should be checked *before* investing in the fine-tuning pipeline.
+  **Result: it doesn't.** On 15 held-out sample pages (679 Chữ Hán characters), CHAT's pretrained model scored 22.2% vs. NomNaOCR's own pretrained CRNNxCTC at 86.7% — the opposite of what the hybrid hypothesis needs. A follow-up quick fine-tuning trial (10 epochs on a Kaggle GPU) was run to check whether this was a fixable pipeline issue rather than a hard capability gap — it made things *worse* (4.1%, likely catastrophic forgetting from fine-tuning on a very small, narrow slice of text), reinforcing rather than undermining this result. Full writeup, methodology, and caveats in [`experiments/phase0_validation/README.md`](experiments/phase0_validation/README.md).
+- [ ] **Phase 1 — Fine-tuning pipeline.** Adapt Kraken's fine-tuning tooling to continue training CHAT's model on NomNaOCR's labeled dataset. **Not recommended based on Phase 0's result** — see the note above; NomNaOCR's own pretrained model remains the best available baseline for Chữ Hán recognition on this data by a wide margin.
 - [ ] **Phase 2 — Evaluation.** Compare the fine-tuned hybrid model against NomNaOCR's original models on a held-out test set, using the same metrics NomNaOCR used (Sequence Accuracy, Character Accuracy, Character Error Rate).
 - [ ] **Phase 3 — Translation integration.** Wire up a Nôm-to-Quốc-Ngữ translation step (via NomNaNMT or an equivalent) on top of recognized text.
 - [ ] **Phase 4 — Backend API.** Wrap the full pipeline (detection → recognition → translation) in a lightweight API (e.g. FastAPI) that a mobile app can call.
