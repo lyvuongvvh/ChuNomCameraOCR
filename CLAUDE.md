@@ -18,8 +18,10 @@ Camera-based OCR + translation for Chữ Nôm (historical Vietnamese script). Co
 ## Working order — do not skip ahead
 
 1. **Validate first.** Before writing any fine-tuning code, help me pull a handful of sample Nôm pages (from NomNaOCR's dataset or NomNaSite's demo) and run CHAT's pretrained model on them as-is. Count how many Chinese-derived (Chữ Hán) characters it correctly recognizes vs. NomNaOCR's own model on the same pages. This determines whether the whole hybrid approach is worth pursuing.
-2. **Only if step 1 shows a real improvement**, proceed to building the Kraken fine-tuning pipeline on NomNaOCR's dataset.
-3. **Evaluate** the fine-tuned model against NomNaOCR's original models using the same metrics NomNaOCR reports (Sequence Accuracy, Character Accuracy, Character Error Rate).
+   **Done — result is negative.** CHAT scored 22.2% vs. NomNaOCR's own pretrained model at 86.7% (15 held-out pages, 679 Chữ Hán chars); a follow-up CHAT fine-tuning trial made it worse (4.1%). See `experiments/phase0_validation/results.md`.
+2. ~~Only if step 1 shows a real improvement, proceed to building the Kraken fine-tuning pipeline on NomNaOCR's dataset.~~ **Not pursued** — Phase 0's result doesn't support it. NomNaOCR's own pretrained model is adopted as the baseline recognizer instead.
+3. **Evaluate** (retargeted from evaluating a fine-tuned hybrid to evaluating NomNaOCR's own pretrained model, since step 2 was skipped) against NomNaOCR's original reported metrics (Sequence Accuracy, Character Accuracy, Character Error Rate), on its full held-out validation split.
+   **Done.** Character Accuracy 84.7%, CER 0.14–0.15, but Sequence Accuracy (exact line match) only 29.4% — most lines have at least one character wrong despite high per-character accuracy. This is worth weighing before Phase 4/5: downstream translation will usually see near-correct, not exact, transcriptions. See `experiments/phase2_nomnaocr_baseline/results.md`.
 4. **Only after a working, evaluated recognizer exists**, build the translation step (Nôm → modern Vietnamese) and the API/mobile app layers.
 
 ## Conventions for this repo
