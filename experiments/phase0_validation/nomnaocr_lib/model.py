@@ -81,3 +81,25 @@ class CRNNRecognizer:
         indices = tf.gather(decoded[0], tf.where(tf.logical_and(decoded[0] != 0, decoded[0] != -1)))
         text = tf.strings.reduce_join(self.num2char(indices))
         return text.numpy().decode("utf-8")
+
+    def predict_beams(self, img_path: str, beam_width: int = 10) -> list[tuple[str, float]]:
+        """Phase 2b (post-correction): top-`beam_width` CTC beam-search hypotheses and their
+        log-probabilities, for LM rescoring - added on top of Phase 0/2's `predict_text` (which
+        stays greedy-decode-only, unchanged) rather than replacing it. Uses TF's own
+        `tf.nn.ctc_beam_search_decoder` (via `ctc_decode(greedy=False)`) - no custom beam search
+        implementation needed. Returned in descending order of the model's own CTC log-probability
+        (index 0 is what `predict_text` would return, modulo greedy/beam-search tie-breaking)."""
+        image = self.process_image(img_path)
+        pred_tokens = self.model.predict(tf.expand_dims(image, axis=0), verbose=0)
+        input_length = tf.ones(1) * pred_tokens.shape[1]
+        decoded, log_probs = tf.keras.backend.ctc_decode(
+            pred_tokens, input_length=input_length,
+            greedy=False, beam_width=beam_width, top_paths=beam_width,
+        )
+        beams = []
+        for path_idx, path_tensor in enumerate(decoded):
+            seq = path_tensor[0]
+            indices = tf.gather(seq, tf.where(tf.logical_and(seq != 0, seq != -1)))
+            text = tf.strings.reduce_join(self.num2char(indices)).numpy().decode("utf-8")
+            beams.append((text, float(log_probs.numpy()[0][path_idx])))
+        return beams
