@@ -6,6 +6,33 @@ full retraining effort (a real fine-tuning pass on NomNaOCR's own architecture/d
 from the CHAT hybrid idea Phase 0 already rejected), this tries the cheaper option: correct the
 existing model's output after the fact, without touching its weights at all.
 
+## Status
+
+- [x] Beam-search probe run (see below) - confirmed the approach's ceiling before building the
+      rest of the pipeline.
+- [x] LM trained on `Patches/Train.txt` (30,259 lines).
+- [x] Beam search run over all 7,577 held-out patches (`beam_width=5`; beam search is much more
+      expensive than greedy decode - see the note in "Running it end to end" below - ~72 min on
+      this project's dev machine, vs. Phase 2's ~16.5 min greedy run).
+- [x] Lambda tuned on a held-out 10% slice (758 patches): best value **1.0** (Sequence Accuracy
+      28.9%→33.5%, Character Accuracy 83.3%→82.5% on that tune slice).
+- [x] `results.md` generated on the remaining "final" 90% slice (6,819 patches, never used for
+      tuning):
+
+  | Metric | Baseline (greedy) | Corrected (beam + LM) | Delta |
+  |---|---|---|---|
+  | Sequence Accuracy | 29.4% | 32.4% | **+3.0pp** |
+  | Character Accuracy | 84.8% | 83.6% | -1.2pp |
+  | CER (macro / micro) | 0.1496 / 0.1378 | 0.1420 / 0.1309 | both improve |
+
+- [x] **Result: a modest, real improvement, not a fix.** +3.0pp Sequence Accuracy for zero new
+      data and no retraining, at a small Character Accuracy cost - consistent with the ceiling
+      predicted by the beam-search probe below (this can only recover errors where the right
+      character exists in some beam; it cannot invent one the model never considered). Whether
+      this modest gain is worth carrying into Phase 3, or whether it's worth attempting a real
+      fine-tuning pass instead (Phase 2's original "what does it take" scoping still applies), is
+      a judgment call for the next step, not something this experiment resolves on its own.
+
 ## Approach
 
 1. **CTC beam search** instead of greedy decoding, to get the model's top-K plausible
@@ -59,14 +86,25 @@ and the same dataset/weights paths as Phase 2 - see
 # 1. Train the LM on NomNaOCR's own training split (host, no Docker needed)
 python scripts/build_lm.py --dataset-root ../NomNaOCR --order 4 --out data/char_lm.json
 
-# 2. Generate top-10 beam candidates for every patch in Phase 2's manifest (Docker, reuses
-#    phase0_validation's image; similar runtime to Phase 2's run_eval.py)
+# 2. Generate top-K beam candidates for every patch in Phase 2's manifest (Docker, reuses
+#    phase0_validation's image). IMPORTANT: beam search is much slower than Phase 2's greedy
+#    decode - measured on this project's dev machine, greedy is ~0.10s/image, but CTC
+#    beam-search decode is ~1.33s/image at beam_width=10 (~168 min total) vs. ~0.72s/image at
+#    beam_width=5 (~90 min total). The bottleneck is TF's ctc_beam_search_decoder op itself
+#    (no GPU kernel in stock TensorFlow, so a GPU machine like Kaggle would NOT meaningfully
+#    speed this specific step up - only the forward pass, ~8% of the per-image cost). We used
+#    beam_width=5 as the practical default (the earlier beam-search probe in this README found
+#    recoverable corrections within the top 3-5 candidates). If interrupted (including a planned
+#    shutdown), progress is checkpointed to --out every --checkpoint-every patches as real file
+#    writes (not just buffered stdout) - rerun the exact same command with --resume to continue;
+#    it skips img_names already present in the output file.
 docker build -t phase0-nomnaocr -f ../phase0_validation/docker/nomnaocr/Dockerfile ../phase0_validation
 docker run --rm -v "$(cd .. && pwd):/workspace" -w /workspace --entrypoint python \
     phase0-nomnaocr phase2b_postcorrection/scripts/run_beams.py \
     --dataset-root NomNaOCR --all-labels NomNaOCR/Patches/All.txt \
     --weights NomNaOCR_H5/NomNaOCR_CRNNxCTC.h5 \
     --manifest phase2_nomnaocr_baseline/data/manifest.json \
+    --beam-width 5 --checkpoint-every 250 \
     --out phase2b_postcorrection/data/beams.json --resume
 
 # 3. Carve the tune/final split (host)
