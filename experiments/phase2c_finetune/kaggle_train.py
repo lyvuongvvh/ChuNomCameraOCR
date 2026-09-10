@@ -17,8 +17,11 @@ import os
 import sys
 import time
 
-EXPECTED_SAMPLE_IMAGE = "DVSKTT-3 Ban ky toan thu/DVSKTT_ban_toan_V_30a_9.jpg"
-EXPECTED_SAMPLE_TEXT = "使通好執事遂而不反我是以有往年之帥帝遭"  # this project's own local pretrained-weights output for that image (nomnaocr_lib/model.py, unmodified) - used to confirm the H5 weights loaded correctly under whichever TensorFlow this kernel ends up using, not as a training-quality signal
+# A Train.txt sample, not Validate.txt: this Kaggle dataset never contains Validate.txt's images
+# by construction (see the module docstring), so a Validate.txt sample here would always fail
+# with a file-not-found error unrelated to H5/Keras compatibility - the bug that broke kernel v7.
+EXPECTED_SAMPLE_IMAGE = "DVSKTT-4 Ban ky thuc luc/DVSKTT_ban_thuc_XII_7b_2.jpg"
+EXPECTED_SAMPLE_TEXT = "不得棄本遂末并托以販賣技術游足游手其有"  # this project's own local pretrained-weights output for that image (exact match to ground truth, since it's a training example) - used to confirm the H5 weights loaded correctly under whichever TensorFlow this kernel ends up using, not as a training-quality signal
 
 
 def find_dataset_root(marker="train.py", search_root="/kaggle/input"):
