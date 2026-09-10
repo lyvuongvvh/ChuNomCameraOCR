@@ -26,7 +26,7 @@ in usable form (NomNaOCR's own dataset has OCR transcription labels, not transla
 
 ## Stage 1: dictionary coverage - a real, honest limitation
 
-Combines three sources (`scripts/build_reading_dict.py`):
+Combines four sources (`scripts/build_reading_dict.py`):
 - **Unicode's Unihan database** (`kVietnamese` field) - authoritative, permissively licensed
   (Unicode Character Database terms), but covers only **50.2%** of this project's own character
   vocabulary (7,479 characters, from `Patches/All.txt`) - and notably incomplete even for common
@@ -44,11 +44,24 @@ Combines three sources (`scripts/build_reading_dict.py`):
   general Hán-Việt dictionary, so it's a genuine complement rather than a bigger version of the
   same thing. Used under nomfoundation.org's terms of use (non-commercial/research use with
   attribution; only commercial redistribution requires permission).
+- **Digitizing Vietnam's "Unified Hán-Nôm Lookup"** (Columbia University Vietnamese Studies
+  Program) - searches Nguyễn Quang Hồng's **"Tự Điển Chữ Nôm Dẫn Giải"** (~10,000 entries, the
+  authoritative academic dictionary - not otherwise available as usable data; VNPF's own site
+  only has a catalog page for the printed 2-volume edition) together with **"Nguyễn Trãi Quốc Âm
+  Từ Điển"**, queried live for the characters the three sources above still don't cover. Resolved
+  **757 of 3,289** of them (e.g. 為→10 readings including "vì"/"vay"/"vài", none of which any
+  other source found). Only accepts one character per request (unlike BTCN's batching, confirmed
+  empirically - a 2-character query is a literal compound search, not two lookups), so this took
+  ~3,289 individual, rate-limited requests (~70 min) rather than BTCN's ~46 batched ones. No
+  explicit terms of use found; used here as a rate-limited, identified, non-commercial research
+  query against a university project that says it wants to share its materials, not a bulk
+  redistribution.
 
-**Combined coverage: 56.0%** (4,190 of 7,479 characters) - up from 51.3% with Unihan+rime-chunom
-alone, a real but modest +4.7pp gain, not a fix for the underlying gap. **Over 40% of this
-project's character vocabulary still has no dictionary reading at all.** Uncovered characters are
-passed through unchanged (bracketed, e.g. `[何]`), not guessed - Stage 2 is expected to carry the
+**Combined coverage: 66.1%** (4,947 of 7,479 characters) - up from 56.0% with the first three
+sources, a real **+10.1pp** gain from Digitizing Vietnam alone. **A third of this project's
+character vocabulary still has no dictionary reading at all.** Uncovered characters are passed
+through unchanged (bracketed, e.g. `[父]` - still uncovered by all four sources), not guessed -
+Stage 2 is expected to carry the
 majority of the real translation work using the original text and context, not just patch small
 gaps in an otherwise-complete gloss.
 
@@ -146,21 +159,26 @@ python scripts/build_reading_dict.py --vocab-labels ../NomNaOCR/Patches/All.txt 
 python -m unittest tests.test_reading tests.test_build_reading_dict -v
 ```
 
-The build queries VNPF's live dictionary tool for uncovered characters (see above) - pass
-`--skip-btcn` for a fast, network-light rerun during dev iteration (Unihan+rime-chunom only,
-51.3% coverage instead of 56.0%).
+The build queries VNPF's and Digitizing Vietnam's live dictionary tools for uncovered characters
+(see above) - pass `--skip-btcn`/`--skip-dvn` for a fast, network-light rerun during dev iteration
+(Unihan+rime-chunom only, 51.3% coverage instead of 66.1%). `--skip-dvn` is worth using on its own
+too: the Digitizing Vietnam pass alone takes ~70 minutes (one request per character, no
+batching), and checkpoints to `data/dvn_query_cache.json` so an interrupted run resumes instead of
+re-querying from scratch.
 
 ## Known simplifications (flagged, not silently assumed)
 
-- **Dictionary coverage is 56%, not complete** - see above. This is a hard limitation of
+- **Dictionary coverage is 66.1%, not complete** - see above. This is a hard limitation of
   publicly available data, not a bug to fix by trying harder at the same sources.
 - **`rime-chunom`'s license is unclear** - used for research/prototyping; would need resolving
   before any production/public-facing use.
-- **BTCN (VNPF) is scraped, not a downloadable dataset** - queried live per run, batched and
-  rate-limited to stay polite to a small nonprofit's server; used for non-commercial research per
-  its terms of use, not redistributed.
+- **BTCN (VNPF) and Digitizing Vietnam are scraped, not downloadable datasets** - queried live
+  per run, batched/rate-limited (BTCN) or rate-limited with checkpointing (Digitizing Vietnam) to
+  stay polite to their servers; used for non-commercial research (BTCN explicitly permits this in
+  its terms of use; Digitizing Vietnam has none published, but is itself a non-commercial
+  academic project).
 - **First reading only** - `apply_reading_dict` uses each character's first listed reading;
   the underlying sources sometimes list multiple candidates (e.g. homographs with different
-  readings by meaning, or BTCN's several unrelated readings for one character like 北), and no
-  attempt is made to disambiguate by context at the dictionary stage - that disambiguation is
-  left entirely to Stage 2.
+  readings by meaning, or BTCN/Digitizing Vietnam's several unrelated readings for one character
+  like 北 or 為), and no attempt is made to disambiguate by context at the dictionary stage - that
+  disambiguation is left entirely to Stage 2.

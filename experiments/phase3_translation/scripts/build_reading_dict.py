@@ -1,5 +1,5 @@
 """Phase 3, Stage 1: build a best-effort Han-Nom character -> Vietnamese reading dictionary,
-combining three sources - deliberately NOT claimed to be complete (see README.md's coverage
+combining four sources - deliberately NOT claimed to be complete (see README.md's coverage
 numbers and "Known simplifications"):
 
 1. Unicode's Unihan database (`kVietnamese` field) - authoritative Sino-Vietnamese readings for
@@ -20,9 +20,18 @@ numbers and "Known simplifications"):
    complement rather than a replacement. Used here per nomfoundation.org's terms of use, which
    permit non-commercial/research use with attribution and restrict only commercial
    redistribution.
+4. Digitizing Vietnam's (Columbia University Vietnamese Studies Program) "Unified Han-Nom
+   Lookup", which searches Nguyen Quang Hong's "Tu Dien Chu Nom Dan Giai" (~10,000 entries - the
+   authoritative academic dictionary; not otherwise available as data, see README.md) and
+   "Nguyen Trai Quoc Am Tu Dien" together. A 100-character sample of vocab left uncovered by the
+   three sources above resolved 31% - much richer than BTCN, but only accepts one character per
+   request (confirmed empirically; a 2-character query is a literal compound search, not two
+   lookups), so covering the full gap means thousands of individual requests. Rate-limited and
+   checkpointed (see fetch_dvn_readings) accordingly - this is expected to take on the order of an
+   hour for the full vocabulary, not a quick rerun.
 
 Characters covered by more than one source keep all reading variants (deduplicated). Characters
-in none of the three are left uncovered - `translate_lib/reading.py` passes them through
+in none of the four are left uncovered - `translate_lib/reading.py` passes them through
 unchanged rather than guessing, and Stage 2 (LLM) is expected to use surrounding context for
 those.
 
@@ -62,6 +71,18 @@ BTCN_READING_RE = re.compile(
     r"<td></td><td><i>([^<]+)</i></td>(?:<td>\s*([^<]*)</td></tr>)?"
     r"|<td></td><td>([^<]+)</td><td>\s*([^<]*)</td></tr>"
 )
+
+DVN_URL = "https://www.digitizingvietnam.com/en/tools/han-nom-dictionaries/general"
+DVN_USER_AGENT = ("ChuNomCameraOCR-research/1.0 (non-commercial research project; "
+                   "see github.com/lyvuongvvh/ChuNomCameraOCR)")
+# Digitizing Vietnam serves this page as a Next.js app - the actual dictionary entries are
+# shipped as JSON inside React Server Component "flight" payload chunks
+# (`self.__next_f.push([1,"..."])`), not plain HTML - confirmed empirically, not documented
+# anywhere. Each pushed string is itself a JSON-escaped string; unescaping it (json.loads with
+# added quotes) yields readable text containing `"hn":"...","qn":"..."` pairs directly, without
+# needing to reconstruct the full flight-protocol tree.
+DVN_CHUNK_RE = re.compile(r'self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)')
+DVN_HN_QN_RE = re.compile(r'"hn":"([^"]*)","qn":"([^"]*)"')
 
 
 def fetch_unihan_kvietnamese() -> dict:
@@ -143,6 +164,59 @@ def fetch_btcn_readings(chars: list, batch_size: int = 80, delay: float = 1.0) -
     return readings
 
 
+def parse_dvn_response(html: str, ch: str) -> list:
+    """Extracts readings for `ch` from one response of Digitizing Vietnam's Unified Han-Nom
+    Lookup. Only entries whose "hn" field is exactly `ch` are kept (the response is scoped to the
+    query already, but this guards against any unrelated cross-referenced entries the tool might
+    also ship in the same payload)."""
+    readings = []
+    for m in DVN_CHUNK_RE.finditer(html):
+        try:
+            text = json.loads('"' + m.group(1) + '"')
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        for hn, qn in DVN_HN_QN_RE.findall(text):
+            if hn == ch and qn and qn.lower() not in readings:
+                readings.append(qn.lower())
+    return readings
+
+
+def fetch_dvn_readings(chars: list, cache_path: "pathlib.Path | None" = None,
+                        delay: float = 1.2, checkpoint_every: int = 50) -> dict:
+    """Queries Digitizing Vietnam for `chars`, one character per request (no batching support -
+    see module docstring), pausing `delay` seconds between requests to stay under 1 request/sec
+    against a small academic project's server, and identifying this project in the User-Agent as
+    a courtesy. This takes long enough (~1hr for a few thousand characters) that a crash or
+    network blip shouldn't mean starting over: if `cache_path` is given, progress (including
+    characters queried but NOT found, so they aren't re-queried on resume) is checkpointed there
+    every `checkpoint_every` characters, and reloaded first if it already exists. Returns only the
+    characters that actually resolved to a non-empty reading list."""
+    attempted = {}
+    if cache_path and cache_path.exists():
+        attempted = json.loads(cache_path.read_text(encoding="utf-8"))
+        print(f"  resuming from cache: {len(attempted)} characters already queried")
+
+    todo = [c for c in dict.fromkeys(chars) if c not in attempted]
+    for i, ch in enumerate(todo):
+        url = f"{DVN_URL}?q={urllib.parse.quote(ch)}"
+        req = urllib.request.Request(url, headers={"User-Agent": DVN_USER_AGENT})
+        html = urllib.request.urlopen(req, timeout=30).read().decode("utf-8")
+        attempted[ch] = parse_dvn_response(html, ch)  # [] recorded too, so resume skips it
+
+        done = i + 1
+        if cache_path and (done % checkpoint_every == 0 or done == len(todo)):
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_text(json.dumps(attempted, ensure_ascii=False, indent=2), encoding="utf-8")
+        if done % checkpoint_every == 0 or done == len(todo):
+            resolved_so_far = sum(1 for v in attempted.values() if v)
+            print(f"  queried {done}/{len(todo)} characters this run, "
+                  f"{resolved_so_far} resolved so far (of {len(attempted)} attempted total)")
+        if done < len(todo):
+            time.sleep(delay)
+
+    return {ch: vals for ch, vals in attempted.items() if vals}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vocab-labels", required=True, type=pathlib.Path,
@@ -151,6 +225,16 @@ def main() -> None:
     parser.add_argument("--skip-btcn", action="store_true",
                          help="Skip the live BTCN lookup (Unihan+rime-chunom only) - for fast "
                               "dev iteration without depending on nomfoundation.org's server.")
+    parser.add_argument("--skip-dvn", action="store_true",
+                         help="Skip the live Digitizing Vietnam lookup - it's the slowest source "
+                              "by far (one request per character, ~1hr for the full gap). Use "
+                              "this for fast dev iteration.")
+    parser.add_argument("--dvn-cache", type=pathlib.Path, default=None,
+                         help="Checkpoint file for the Digitizing Vietnam queries, so an "
+                              "interrupted run can resume instead of re-querying from scratch "
+                              "(defaults to dvn_query_cache.json next to --out).")
+    parser.add_argument("--dvn-delay", type=float, default=1.2,
+                         help="Seconds to wait between Digitizing Vietnam requests.")
     args = parser.parse_args()
 
     print("Fetching Unihan kVietnamese readings...")
@@ -172,6 +256,16 @@ def main() -> None:
         btcn = fetch_btcn_readings(uncovered)
         print(f"  resolved {len(btcn)} of {len(uncovered)} previously-uncovered characters")
 
+    dvn = {}
+    if not args.skip_dvn:
+        still_uncovered = [c for c in vocab if c not in unihan and c not in rime and c not in btcn]
+        dvn_cache = args.dvn_cache or (args.out.parent / "dvn_query_cache.json")
+        print(f"\nQuerying Digitizing Vietnam's Unified Han-Nom Lookup for the "
+              f"{len(still_uncovered)} characters still uncovered (one request per character - "
+              f"this is the slow one; checkpointing to {dvn_cache})...")
+        dvn = fetch_dvn_readings(still_uncovered, cache_path=dvn_cache, delay=args.dvn_delay)
+        print(f"  resolved {len(dvn)} of {len(still_uncovered)} previously-uncovered characters")
+
     combined = {}
     for ch, vals in unihan.items():
         combined.setdefault(ch, {"readings": [], "sources": []})
@@ -185,7 +279,12 @@ def main() -> None:
         combined.setdefault(ch, {"readings": [], "sources": []})
         combined[ch]["readings"].extend(v for v in vals if v not in combined[ch]["readings"])
         combined[ch]["sources"].append("btcn")
+    for ch, vals in dvn.items():
+        combined.setdefault(ch, {"readings": [], "sources": []})
+        combined[ch]["readings"].extend(v for v in vals if v not in combined[ch]["readings"])
+        combined[ch]["sources"].append("digitizing-vietnam")
 
+    unihan_rime_btcn_covered = sum(1 for c in vocab if c in unihan or c in rime or c in btcn)
     covered = [c for c in vocab if c in combined]
     print(f"\nProject vocab: {len(vocab)} characters")
     print(f"Combined dictionary covers: {len(covered)} ({100 * len(covered) / len(vocab):.1f}%)")
@@ -193,6 +292,8 @@ def main() -> None:
           f"({100 * sum(1 for c in vocab if c in unihan) / len(vocab):.1f}%)")
     print(f"Unihan+rime-chunom (previous state) would cover: {unihan_or_rime_covered} "
           f"({100 * unihan_or_rime_covered / len(vocab):.1f}%)")
+    print(f"Unihan+rime-chunom+BTCN (previous state) would cover: {unihan_rime_btcn_covered} "
+          f"({100 * unihan_rime_btcn_covered / len(vocab):.1f}%)")
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(combined, ensure_ascii=False, indent=2), encoding="utf-8")
