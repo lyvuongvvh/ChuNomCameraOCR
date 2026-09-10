@@ -1,9 +1,8 @@
 """Phase 2c: Kaggle training entry point - see experiments/phase2c_finetune/README.md for the
-full experiment context. Run as a Kaggle *script* kernel (not a notebook): the whole diagnostic +
-conditional TF-version fallback + training run happens in one linear script, to minimize
-push/wait/download cycles - Phase 0's CHAT fine-tuning trial needed 7 kernel iterations to work
-through environment issues one at a time; this front-loads that adaptation into a single run
-where possible instead.
+full experiment context. Run as a Kaggle *script* kernel (not a notebook): the diagnostic H5
+compatibility check and the training run happen in one linear script, to minimize push/wait/
+download cycles - Phase 0's CHAT fine-tuning trial needed 7 kernel iterations to work through
+environment issues one at a time.
 
 Expects a Kaggle Dataset attached as input, containing (see
 experiments/phase2c_finetune/README.md's "Kaggle dataset layout"):
@@ -15,7 +14,6 @@ experiments/phase2c_finetune/README.md's "Kaggle dataset layout"):
     nomnaocr_lib/, train_lib/  - this repo's code, copied in at staging time
 """
 import os
-import subprocess
 import sys
 import time
 
@@ -57,31 +55,23 @@ def main() -> None:
     print("TensorFlow version (as shipped by Kaggle):", tf.__version__)
     print("GPUs visible:", tf.config.list_physical_devices("GPU"))
 
-    ok = False
+    # No TF-version-pinning fallback here: tensorflow==2.10.0 (this project's local pin) has no
+    # wheel for Kaggle's Python 3.12 kernels at all, so pinning isn't an option on Kaggle even in
+    # principle. The one real incompatibility found (Keras 3 removing StringLookup.vocab_size(),
+    # fixed in nomnaocr_lib/model.py to use vocabulary_size() instead, which exists in both Keras
+    # 2 and 3) is fixed at the source, so this check is now a plain confirmation, not a trigger
+    # for a version swap.
     try:
         ok = check_h5_compat(root)
     except Exception as e:
-        print("Default TensorFlow failed to load/run the pretrained weights:", repr(e))
-
-    if not ok and os.environ.get("NOMNAOCR_TF_PINNED") != "1":
-        print("H5 compatibility check failed under Kaggle's default TensorFlow - falling back "
-              "to the exact version this project's local Docker pipeline uses (tensorflow==2.10.0, "
-              "matches nomnaocr_lib/model.py's own comments on why this pin matters for Keras "
-              "3 vs. 2 .h5 loading behavior).")
-        subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "tensorflow==2.10.0"], check=True)
-        # A fresh process is needed for `import tensorflow` to pick up the newly installed
-        # version cleanly (the current process already has the old one cached in sys.modules).
-        env = dict(os.environ, NOMNAOCR_TF_PINNED="1")
-        result = subprocess.run([sys.executable, __file__], env=env)
-        sys.exit(result.returncode)
+        print("Failed to load/run the pretrained weights:", repr(e))
+        ok = False
 
     if not ok:
         raise RuntimeError(
-            "H5 compatibility check still fails even after pinning tensorflow==2.10.0 - "
-            "something other than the TF/Keras version is wrong (e.g. GPU-vs-CPU numerical "
-            "difference producing a different greedy decode, or a genuinely corrupted upload). "
-            "Refusing to train against a recognizer that isn't verifiably producing correct "
-            "output, since the training forward pass would inherit the same bug."
+            "H5 compatibility check failed - the recognizer isn't producing the expected output "
+            "under this Kaggle kernel's TensorFlow. Refusing to train against a recognizer that "
+            "isn't verifiably correct, since the training forward pass would inherit the same bug."
         )
 
     print("H5 compatibility confirmed - proceeding to training.")
@@ -109,7 +99,11 @@ def main() -> None:
     recognizer = CRNNRecognizer(vocab, max_length, weights)
     model = recognizer.model
 
-    EPOCHS = int(os.environ.get("NOMNAOCR_EPOCHS", 5))
+    # Start at 1 epoch: this is a validation run to confirm GPU training actually works and that
+    # a Keras-3-saved checkpoint round-trips correctly through this project's local TF 2.10 eval
+    # pipeline (untested until a real checkpoint is downloaded and tried there) before committing
+    # to a longer run. Bump once that's confirmed.
+    EPOCHS = int(os.environ.get("NOMNAOCR_EPOCHS", 1))
     BATCH_SIZE = int(os.environ.get("NOMNAOCR_BATCH_SIZE", 32))
     LEARNING_RATE = float(os.environ.get("NOMNAOCR_LR", 1e-5))
     DEV_FRACTION = 0.05  # small in-training monitoring slice, carved from Train.txt only -
@@ -167,7 +161,12 @@ def main() -> None:
               f"dev_loss={dev_loss:.4f}, {n_batches} batches, {n_skipped} non-finite skipped, "
               f"{elapsed:.0f}s ({elapsed / max(n_batches, 1):.3f}s/batch)")
 
-        ckpt_path = f"{out_dir}/finetuned_epoch{epoch}.h5"
+        # Keras 3 (this Kaggle kernel's TF) requires a .weights.h5 extension for save_weights()
+        # in the legacy HDF5 weights-only format - plain .h5 raises an error under Keras 3. This
+        # still ends in ".h5", so this project's local TF 2.10 load_weights() (which only checks
+        # for that suffix, not an exact ".weights.h5" match) should still accept it - confirmed
+        # by actually downloading and loading one of these checkpoints locally, not assumed.
+        ckpt_path = f"{out_dir}/finetuned_epoch{epoch}.weights.h5"
         model.save_weights(ckpt_path)
         print(f"Saved checkpoint to {ckpt_path}")
 

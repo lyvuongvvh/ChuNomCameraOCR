@@ -55,7 +55,14 @@ class CRNNRecognizer:
         # Matches DataHandler.max_length: longest label in the full training set (loader.py),
         # used to cap ctc_decode's output length.
         self.max_length = max_length
-        self.model = build_crnn(vocab_size=self.char2num.vocab_size())
+        # vocabulary_size(), not the deprecated vocab_size() alias: the latter was removed
+        # entirely in Keras 3 (Kaggle's default TF as of this writing, 2.20.0) - vocabulary_size()
+        # exists as the recommended replacement in both Keras 2 (this repo's pinned local
+        # tensorflow==2.10.0 - it's the target of that version's own deprecation warning) and
+        # Keras 3, so this one call is portable across both environments without needing a TF
+        # version pin on Kaggle (which isn't even possible there - tensorflow==2.10.0 has no
+        # wheel for Kaggle's Python 3.12).
+        self.model = build_crnn(vocab_size=self.char2num.vocabulary_size())
         self.model.load_weights(weights_path)
 
     def process_image(self, img_path: str):
