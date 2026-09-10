@@ -217,8 +217,106 @@ that diverge more (treating 牢 as "prison" vs. as an untranslated filler) - bot
 confidence by the model in both editions, consistent with the flag correctly predicting
 instability. Only a 3-line spot-check, not a full audit of all 60.
 
+## A real parallel corpus for Kiều - ground-truth alignment against Wikisource
+
+The one gap called out everywhere above - "no modern-Vietnamese ground truth to score
+translations against" - has a fix for Truyện Kiều specifically: unlike DVSKTT (a Han source
+needing an actual translation) or Lục Vân Tiên (not yet done), Kiều's source text is ALREADY in
+Vietnamese - the poem was composed in Nôm verse, so a clean modern-spelling edition is itself the
+ground truth, no translation step needed. Vietnamese Wikisource hosts the complete, numbered
+3,254-verse poem (public domain; https://vi.wikisource.org/wiki/Truyện_Kiều), matching the same
+work NomNaOCR's three editions (1866/1871/1872) digitized.
+
+**Why this needs real alignment, not just manifest order:** each edition's manifest only covers a
+few hundred spot-digitized verses out of 3,254 (482/639/702 for 1866/1871/1872) - OCR line N is
+not verse N, it could be any verse, as long as order is preserved (pages are scanned in reading
+order, never shuffled). This is a subsequence-alignment problem: find the best strictly-increasing
+mapping of each edition's OCR lines onto the full verse list, skipping undigitized verses.
+
+**Approach (`eval_lib/kieu_ground_truth.py`, `scripts/build_kieu_ground_truth.py`):** a standard
+weighted subsequence-alignment DP scored by real Levenshtein distance between each line's Stage-1
+phonetic reading (already computed, not the LLM's fluent `translation` - Nôm poetry's reading is
+close to the verse's actual wording, since the characters are chosen for their Vietnamese sound)
+and each verse's normalized text (diacritics/case/punctuation stripped, and Stage 1's own "[X]"
+unresolved-character brackets removed, since Python counts CJK characters as alphanumeric and
+they'd otherwise get compared directly against Latin text for no good reason).
+
+Two cheaper cost functions were tried and rejected before landing on real edit distance,
+documented as a concrete lesson rather than silently fixed:
+- **Multiset ("bag") distance** (O(1) per pair via Counter overlap, to avoid O(n×M) calls to an
+  O(L²) function): WRONG, not just approximate - on a small ~22-letter alphabet, any two
+  same-length Vietnamese strings share a large fraction of their multiset by chance, so it
+  systematically favored similar-*length* wrong verses over correct-*content* right ones. Found
+  on real data: a line's true verse scored real edit distance 12, but bag distance ranked a wrong
+  verse's 8 ahead of it.
+- **Real edit distance gated by a normalized-length window** (only compute the O(L²) call when
+  |len_a - len_b| ≤ 6, else skip it): also wrong on lines with multiple unresolved characters -
+  removing 2 bracket-wrapped characters can shorten a reading by 10+ characters relative to its
+  true (fully-spelled) verse, pushing the correct verse outside any reasonable length window. A
+  widened window doesn't fix it either: Kiều's normalized verse lengths are so densely clustered
+  (measured: hundreds of the 3,254 verses land on any single length value 20-28) that a "clearly
+  narrower than the whole poem" window barely filters anything, blowing per-edition alignment
+  time to ~210s.
+
+**What actually worked:** real edit distance, kept affordable via n-gram-seeded candidate
+generation instead of a length filter - index every verse's 3-character substrings once, then for
+each OCR line only evaluate real edit distance against the ~40 verses sharing the most 3-grams
+with its reading (falling back to a tight length window only when a reading shares zero 3-grams
+with anything, e.g. almost entirely unresolved brackets). This is robust to Stage 1's dictionary
+gaps in a way length never was, because it only needs a handful of correctly-read characters
+anywhere in the line, not overall length agreement. Runtime: ~10s for the largest edition (702
+lines), versus ~210s for the naive full O(n×M) real-edit-distance version.
+
+**Results, run over all three editions' Stage-1 readings (1,823 lines total):**
+
+| Edition | Lines aligned | Similarity ≥0.7 | 0.4-0.7 | <0.4 | Avg similarity |
+|---|---|---|---|---|---|
+| 1866 | 482 | 358 (74.3%) | 116 | 8 | 0.780 |
+| 1871 | 639 | 420 (65.7%) | 195 | 24 | 0.748 |
+| 1872 | 702 | 410 (58.4%) | 240 | 52 | 0.703 |
+| **All three** | **1,823** | **1,188 (65.2%)** | 551 (30.2%) | 84 (4.6%) | 0.739 |
+
+Similarity (not a flat distance cutoff) is reported because verse length varies 13-36 normalized
+characters, and even a genuinely *correct* alignment can carry real distance from Stage 1 picking
+an archaic/dialectal spelling over Wikisource's modern one (e.g. "giời" vs "trời" for "sky" -
+different letters, same word) - a fixed distance threshold would misjudge these as bad matches.
+
+Spot-checked examples across the similarity range:
+
+| Similarity | img_name | Verse | Reference (Wikisource) | Stage-1 reading |
+|---|---|---|---|---|
+| 0.96 | `Tale of Kieu 1866/page037b_15.jpg` | 1768 | Tiểu thư phải buổi mới về ninh gia. | tiểu thư phải buổi mãi về ninh gia |
+| 0.83 | `Tale of Kieu 1872/page07b_5.jpg` | 226 | Màu hoa lê hãy dầm dề giọt mưa? | mào hoa lê hãy dào đề dột mưa |
+| 0.68 | `Tale of Kieu 1872/page61b_1.jpg` | 2380 | Cửa viên lại dắt một dây dẫn vào, | cửa [轅] lại dứt một dai dụng vào |
+| 0.0 | `Tale of Kieu 1872/page03a_9.jpg` | 44 (likely wrong) | Lễ là tảo mộ, hội là đạp Thanh. | nhôi hoàng phấn khuyến hôi tiền chỉ bi |
+
+The last row is an honest failure case, not a hidden one: this specific line's Stage-1 reading
+shares essentially no real content with its true verse (checked manually - only a single 3-gram
+overlap exists anywhere in the poem for this reading, an information-theoretic dead end no
+text-matching method can recover from), so the DP was forced to assign *some* verse, but the
+resulting near-zero similarity honestly flags it as unreliable. **This is why every aligned line
+carries its own `distance`/`similarity`, not just a verse number** - any downstream scoring should
+filter on it (e.g. keep only ≥0.7) rather than trusting every assignment equally.
+
+Output: `data/kieu_ground_truth.json` (gitignored, like other `data/` outputs), keyed by
+`img_name`, each entry giving `work`, `verse_number`, `reference_text`, `ocr_reading`, `distance`,
+`similarity`.
+
+**Not yet done:** using this ground truth to actually score Phase 3's `translation` field (as
+opposed to the `reading` field used for alignment) - the `translation` field is the LLM's fluent
+paraphrase, which for Nôm poetry often already reads close to the modern verse itself (not a
+cross-language translation in the usual sense), so a real scoring pass would need to decide what
+"correct" means for a paraphrase rather than an exact transcription. Also not done: the same
+alignment for Lục Vân Tiên (single edition, no cross-edition redundancy check) or sourcing/aligning
+DVSKTT's real 1993 published translation (a genuine Han→Việt translation, not a same-language
+spelling normalization, so a different and harder kind of ground truth).
+
 ## Known simplifications (flagged, not silently assumed)
 
+- **Kiều alignment quality is reported, not guaranteed** - 4.6% of aligned lines score
+  similarity <0.4, meaning the DP was forced to pick *some* verse but likely picked the wrong
+  one (see "A real parallel corpus for Kiều" above). Any consumer of `kieu_ground_truth.json`
+  must filter on `similarity` rather than trusting every `verse_number` equally.
 - **Same-length restriction excludes 583 of 7,577 lines (7.7%)** where baseline/epoch8/
   corrected/ground-truth aren't all equal length - exactly the cases where a single insertion/
   deletion could misalign everything after it (Phase 2's own documented Character Accuracy

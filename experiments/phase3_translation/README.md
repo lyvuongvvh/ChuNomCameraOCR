@@ -146,6 +146,23 @@ with a bonus: the "low confidence" fallback added to the prompt is now the two-l
 (thinking disabled first, low-confidence flag second, one automatic retry third - see
 `translate_line`'s docstring) instead of relying on prompt wording alone.
 
+## Ground truth for Truyện Kiều: real alignment against Wikisource
+
+Unlike DVSKTT (needs an actual Han→Việt translation) or Lục Vân Tiên (not yet done), Kiều's
+source text was already composed in Vietnamese - so a clean modern-spelling edition (Vietnamese
+Wikisource's complete, verse-numbered 3,254-line text, public domain) IS the ground truth, no
+translation step needed. `scripts/build_kieu_ground_truth.py` aligns each of NomNaOCR's three
+digitized editions (1866/1871/1872 - only a few hundred spot-digitized verses each, not the whole
+poem, so this is a real subsequence-alignment problem, not just "manifest order = verse order")
+against it, via a Levenshtein-scored DP over Stage 1's phonetic reading, made affordable with
+n-gram-seeded candidate generation instead of a naive full search (see `results.md` for two
+cheaper approaches that were tried and gave wrong answers before landing on this one). Result:
+1,823 lines aligned, 65.2% at similarity ≥0.7 - see `results.md` for the full breakdown,
+worked examples, and the honest failure case (a line with too little real content in its Stage-1
+reading for any text-matching method to recover). Output: `data/kieu_ground_truth.json`
+(gitignored). Not yet used to actually score the `translation` field, and not yet extended to Lục
+Vân Tiên or DVSKTT - see `results.md`'s "Not yet done."
+
 ## What's not built yet
 
 - **Re-running the shipped corpus with the fixed prompt.** Poetry's inflated low-confidence rate
@@ -156,11 +173,11 @@ with a bonus: the "low confidence" fallback added to the prompt is now the two-l
   dropped 66.0%→21.2% for **$0.33**. `data/translations_full.json` still reflects the *old*
   prompt, though - re-running the full poetry subset (~$4-5) or the whole 7,577-line corpus
   (~$14) to regenerate it with the fix hasn't been done yet (budget-paused, not abandoned).
-- **Any evaluation methodology** - unlike Phase 2's clean Sequence/Character Accuracy against
-  known-correct OCR labels, there's no modern-Vietnamese ground truth to score against
-  automatically. Any real evaluation here would need either human review or sourcing a genuine
-  parallel corpus (e.g. from a published bilingual edition of one of NomNaOCR's three source
-  works), which is a separate, nontrivial effort.
+- **Scoring translations against the new Kiều ground truth** - alignment is done (above), but
+  actually scoring the `translation` field against it isn't, since the field is often already a
+  same-language paraphrase for poetry, not a cross-language translation in the usual sense - see
+  `results.md`.
+- **A parallel corpus for Lục Vân Tiên and DVSKTT** - only Kiều has one so far.
 
 ## Running Stage 1
 
