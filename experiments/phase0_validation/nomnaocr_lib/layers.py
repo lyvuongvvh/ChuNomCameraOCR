@@ -29,7 +29,10 @@ def custom_cnn(config, image_input, alpha=0):
 
 
 def reshape_features(last_cnn_layer, dim_to_keep=-1, name='cnn_features'):
-    _, height, width, channel = last_cnn_layer.get_shape()
+    # .shape, not .get_shape(): Keras 3's KerasTensor (Kaggle's default TF) dropped get_shape()
+    # entirely, while .shape is the equivalent property in both Keras 2 and 3 - matches the same
+    # portability reasoning as nomnaocr_lib/model.py's vocab_size() -> vocabulary_size() fix.
+    _, height, width, channel = last_cnn_layer.shape
     if dim_to_keep == 1:
         target_shape = (height, width * channel)
     elif dim_to_keep == 2:
