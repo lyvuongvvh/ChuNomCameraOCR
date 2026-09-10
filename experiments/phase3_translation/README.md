@@ -75,16 +75,38 @@ cases like 問 "asked" being recognized as 聞 "heard", which post-correction fi
 didn't. This makes Phase 2b's modest aggregate accuracy gain a stronger practical signal for
 translation quality than the percentage alone suggests.
 
+## Stage 2, automated: `translate_lib/llm_translate.py` + `scripts/translate.py`
+
+A real, callable pipeline (not the manual in-conversation translation used for the demos above)
+using the Anthropic API directly. Defaults to Phase 2b's post-corrected predictions as input
+(see `results.md` for why: it recovers ~2.5x more translation-relevant errors than fine-tuning).
+
+Requires `pip install anthropic` and your own `ANTHROPIC_API_KEY` (from
+https://console.anthropic.com/settings/keys - a separate, billed credential, not obtainable from
+a Claude Code session's own authentication). Defaults to `--max-lines 10` so a first run is cheap;
+`--all` runs the complete input set (real cost - not a default to reach for casually). Tracks
+token usage and prints a rough running cost estimate (verify against current pricing before
+trusting it for real budgeting).
+
+```bash
+export ANTHROPIC_API_KEY=...
+pip install anthropic
+python scripts/translate.py \
+    --predictions ../phase2b_postcorrection/data/corrected_predictions.json \
+    --manifest ../phase2_nomnaocr_baseline/data/manifest.json \
+    --reading-dict data/reading_dict.json \
+    --out data/translations.json --max-lines 10
+```
+
+Unit-tested with a mocked API client (`tests/test_llm_translate.py`, no real API calls/key
+needed) - request construction and response parsing are verified, but **the pipeline has not yet
+been run against the real API** (no key available in this session - see "What's not built yet").
+
 ## What's not built yet
 
-- **A scripted, automated Stage 2** - the demonstration above was done manually in conversation
-  (this being an LLM itself), not via a callable API integration. Productionizing this needs an
-  actual API key (Anthropic or another provider) and real cost/latency considerations - a
-  decision for the project owner before building that integration, not assumed here.
-- **End-to-end wiring to Phase 2/2b/2c's recognizer output as a scripted pipeline** - this has
-  now been tested manually against real OCR predictions (see `results.md`), including at scale
-  (11,215 error positions analyzed), not just ground truth - but still via manual in-conversation
-  translation for the qualitative examples, not a callable script.
+- **A real run against the live API** - the script above is built and unit-tested (mocked
+  client only), but has not actually called Anthropic's API yet, since no `ANTHROPIC_API_KEY` is
+  available in this session. Needs the project owner to supply a key before a first real batch.
 - **Any evaluation methodology** - unlike Phase 2's clean Sequence/Character Accuracy against
   known-correct OCR labels, there's no modern-Vietnamese ground truth to score against
   automatically. Any real evaluation here would need either human review or sourcing a genuine
