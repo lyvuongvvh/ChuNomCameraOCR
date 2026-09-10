@@ -148,11 +148,14 @@ with a bonus: the "low confidence" fallback added to the prompt is now the two-l
 
 ## What's not built yet
 
-- **Why poetry translates with much lower self-reported confidence than prose** - a real,
-  specific open question surfaced by the full run (see `results.md`), not explained by OCR
-  accuracy or dictionary coverage differences. Would need either a targeted prompt experiment
-  (is the low-confidence trigger implicitly prose-shaped?) or a human-reviewed sample of poetry
-  translations to resolve.
+- **A prompt fix for poetry's inflated low-confidence rate** - root-caused in `results.md`: the
+  system prompt's trigger ("does not parse into coherent Classical Chinese/Han-Nom... likely OCR
+  mistakes") fits DVSKTT's real Literary Chinese but not Kiều/Lục Vân Tiên's vernacular-Vietnamese
+  verse, which was never meant to parse as Classical Chinese - confirmed by the gap surviving on
+  fully dictionary-resolved lines and at matched line length, ruling out OCR/coverage as the cause.
+  Not yet fixed: the natural next step is telling the prompt explicitly that Nôm verse follows
+  Vietnamese grammar, then re-running the poetry subset to check the rate drops without hiding
+  genuinely bad lines.
 - **Any evaluation methodology** - unlike Phase 2's clean Sequence/Character Accuracy against
   known-correct OCR labels, there's no modern-Vietnamese ground truth to score against
   automatically. Any real evaluation here would need either human review or sourcing a genuine

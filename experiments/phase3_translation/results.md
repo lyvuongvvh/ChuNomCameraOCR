@@ -122,17 +122,63 @@ Poetry's low-confidence rate is roughly **double** prose's. Two obvious explanat
   so no external dictionary - including all four Stage 1 sources - could ever resolve them,
   structurally, not just by chance), versus only 1.4–6.2% for DVSKTT.
 
-Neither fully explains a 2x gap this size. The remaining, untested hypothesis: poetic register
-itself (compressed grammar, allusion, elision for meter) is genuinely harder for the model to
-render confidently, and/or the system prompt's low-confidence trigger ("does not parse into
-coherent Classical Chinese/Han-Nom") is implicitly prose-shaped - verse isn't supposed to read
-like classical Chinese prose, so the model may flag normal poetic structure more readily than
-warranted. **Not resolved here** - flagged as a real, specific open question rather than guessed
-at further.
+Neither fully explains a 2x gap this size.
 
-Spot-checked 5 low-confidence Kiều lines: all cite a genuine unresolved character (usually a
-Private-Use-Area glyph) as the reason, not spurious flagging - consistent with the earlier
-DVSKTT-only spot-check finding honest flags, just at a higher rate for this genre.
+### Follow-up investigation: it's the prompt's coherence check, not the pipeline
+
+Two further tests isolate the real cause:
+
+**1. The gap survives even on fully dictionary-resolved lines.** Restricting to lines where Stage
+1 resolved *every* character (no `[bracket]` gaps at all - nothing missing to blame):
+
+| | Zero-gap lines | Low-confidence rate |
+|---|---|---|
+| Poetry | 1,669 | **55.4%** |
+| Prose | 2,197 | **20.3%** |
+
+Almost identical to each genre's overall rate. If missing dictionary readings were the driver,
+fully-resolved lines should look similar across genres - they don't.
+
+**2. The gap survives controlling for line length.** Poetry's lines are much shorter on average
+(6.9 chars vs. prose's 13.8 - expected, given 6-8 syllable Lục bát/song thất lục bát meter), so
+length is a real confound. Comparing genres at the *same* length:
+
+| Length (chars) | Poetry low-conf | Prose low-conf |
+|---|---|---|
+| 6 | 57.7% (n=1,129) | 28.2% (n=177) |
+| 8 | 67.3% (n=1,052) | 32.0% (n=150) |
+
+At matched length, poetry is still roughly double prose. Not a length artifact either.
+
+**3. The smoking gun - what the model itself says when it flags a zero-gap line.** Of poetry's
+925 zero-gap low-confidence lines, **82.7% explicitly blame "OCR error"/"nhận dạng"** as the
+reason - despite every character already having a valid Stage 1 reading, i.e. there is no actual
+unresolved character to blame. Prose does this too, but less (61.5% of its 447 zero-gap
+low-confidence lines). Spot-checking these poetry lines directly shows why: several are
+already fluent, coherent Vietnamese output that a human reader wouldn't flag at all -
+e.g. `群身乙吏填培固欺` → "Bản thân mỗi người làm quan lại đều bồi đắp cho nền móng vững chắc"
+(grammatical, sensible) and `㳥箋昔越扵𢬣` → "Buông tờ tiên xưa vượt khỏi tay" (fluent, evocative) -
+both flagged `[LOW CONFIDENCE: ...lỗi OCR...]` anyway. Others in the same sample are genuinely
+awkward, so this isn't uniformly spurious - but the rate is clearly inflated by something beyond
+real garbling.
+
+**Root cause: the system prompt's trigger is calibrated for Classical Chinese, not Nôm verse.**
+The exact wording (`translate_lib/llm_translate.py`): flag low confidence when a line "does not
+parse into coherent **Classical Chinese/Han-Nom** even after accounting for likely **OCR
+mistakes**." DVSKTT is written in genuine Literary Chinese, so that bar fits it. Truyện Kiều and
+Lục Vân Tiên are chữ Nôm transcriptions of **spoken Vietnamese** verse - different word order,
+syntax compressed and inverted for meter, sound-borrowed characters - and were never meant to
+parse as Classical Chinese prose to begin with. The prompt gives the model exactly one
+explanation to reach for when something doesn't match that bar ("likely OCR mistakes"), so
+well-formed poetic Vietnamese gets misdiagnosed as garbled recognition output at a much higher
+rate than prose does. **This is a prompt-calibration issue, not evidence that OCR, Stage 1
+coverage, or the translations themselves are actually worse for poetry** - confirmed independently
+by points 1 and 2 above ruling out coverage and length.
+
+**Not yet fixed** - a natural next step would be telling the prompt explicitly that Nôm verse
+follows Vietnamese (not Classical Chinese) grammar and shouldn't be judged against that bar, then
+re-running the poetry subset to see if the low-confidence rate drops without hiding genuinely bad
+lines. Not done here - flagging the diagnosis, not the fix.
 
 **Cross-edition consistency check (Kiều-specific, needs no ground truth):** found 60 lines where
 the post-corrected Han-Nôm text is byte-identical across 2-3 of the poem's 3 digitized editions
