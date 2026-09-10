@@ -15,13 +15,16 @@ move the needle, or just re-fit what it's effectively already learned."
 
 ## Result
 
-**Done.** 8 epochs trained on Kaggle GPU; every checkpoint evaluated against the full held-out
-set. Best checkpoint (epoch 8): Sequence Accuracy 29.4%→29.9% (+0.5pp), Character Accuracy
-84.7%→84.9% (+0.2pp) - a modest gain, similar order of magnitude to Phase 2b's post-correction,
-not a breakthrough. Notable finding: the in-training dev loss (necessarily carved from
-`Train.txt`, since `Validate.txt` is never uploaded to Kaggle) was actively misleading - it
-flagged epoch 8 as the most overfit checkpoint, but epoch 8 scored best on the real held-out set.
-Full numbers, the loss-vs-accuracy discrepancy, and a comparison against Phase 2b in
+**Done.** 8 epochs trained on Kaggle GPU; every single checkpoint evaluated against the full
+held-out set (not just first/last). Result: Sequence Accuracy 29.4%→~29.6-30.0%, Character
+Accuracy 84.7%→84.8-84.9% - a modest gain, similar order of magnitude to Phase 2b's
+post-correction, not a breakthrough. **The full per-epoch trend plateaus almost immediately**
+(all the real movement happens by epoch 1; epochs 2-8 oscillate within noise) - more epochs of
+this same setup would not be expected to help further. Also notable: the in-training dev loss
+(necessarily carved from `Train.txt`, since `Validate.txt` is never uploaded to Kaggle) was
+actively misleading - it flagged epoch 8 as the most overfit checkpoint, but epoch 8 tied for
+best on the real held-out set. Full per-epoch numbers, the loss-vs-accuracy discrepancy, and a
+comparison against Phase 2b in
 [`results.md`](results.md).
 
 ## What's built and verified so far

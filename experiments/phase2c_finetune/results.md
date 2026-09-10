@@ -23,21 +23,40 @@ dev loss nearly doubles. Epoch 1 looks like the correct early-stopping point.
 
 ## Real held-out results (full Validate.txt, 7,577 patches) — the actual test
 
-| Metric | Baseline (pretrained) | Epoch 1 | Epoch 8 |
-|---|---|---|---|
-| Sequence Accuracy | 29.4% | 29.6% (+0.2pp) | **29.9% (+0.5pp)** |
-| Character Accuracy | 84.7% | 84.9% (+0.2pp) | 84.9% (+0.2pp) |
-| CER (macro) | 0.1509 | 0.1487 | **0.1475** |
-| CER (micro) | 0.1384 | 0.1362 | **0.1353** |
+Every one of the 8 epoch checkpoints was evaluated against the full held-out set (not just
+epoch 1 and 8) to see the real trend, not extrapolate from two endpoints:
 
-**Epoch 8 - the checkpoint the in-training dev loss said was most overfit - actually scores best
-on every real held-out metric.** The in-training "dev loss" (carved from `Train.txt`, since
-`Validate.txt`'s images are deliberately never uploaded to Kaggle - see `README.md`) was not a
-reliable proxy for real held-out performance in this setup: CTC loss and downstream greedy-decode
-accuracy are not tightly coupled, and/or that dev slice doesn't represent `Validate.txt`'s
-distribution well enough to use for early stopping. **Flagged as a methodological lesson**: a
-future attempt at this should validate against a real Phase-2-style evaluation periodically
-rather than trusting the training loop's own loss-based dev signal.
+| Epoch | Sequence Accuracy | Character Accuracy | CER (macro) | CER (micro) |
+|---|---|---|---|---|
+| Baseline | 29.4% | 84.7% | 0.1509 | 0.1384 |
+| 1 | 29.6% | 84.9% | 0.1487 | 0.1362 |
+| 2 | 29.9% | 84.8% | 0.1487 | 0.1361 |
+| 3 | 29.6% | 84.8% | 0.1487 | 0.1362 |
+| 4 | 29.8% | 84.9% | 0.1480 | 0.1354 |
+| 5 | 29.9% | 84.9% | 0.1480 | 0.1355 |
+| 6 | **30.0%** | 84.9% | 0.1476 | 0.1354 |
+| 7 | 29.9% | 84.9% | 0.1475 | 0.1355 |
+| 8 | 29.9% | 84.9% | **0.1475** | **0.1353** |
+
+**This is a plateau, not a trend.** Nearly all the real improvement happens between baseline and
+epoch 1; Sequence Accuracy then oscillates in a 29.6-30.0% band for the remaining 7 epochs with
+no further epochs clearly ahead of epoch 1-2 (differences between epochs are smaller than the
+~0.5pp sampling noise floor at n=7,577). Character Accuracy is fully flat at 84.8-84.9% from
+epoch 1 onward. CER is the one metric with a real, if tiny, continuing signal - a smoothly
+decelerating curve converging toward ~0.147-0.148 by epoch 6, not accelerating. **Conclusion: more
+epochs of this same setup (fixed lr=1e-5, no schedule, no augmentation) would not meaningfully
+improve results further** - the model reaches essentially its ceiling for this configuration
+within the first epoch.
+
+Separately, the checkpoint the in-training dev loss called "most overfit" (epoch 8, dev loss
+nearly double epoch 1's) is tied for the best real Sequence Accuracy and CER. That in-training
+signal (necessarily carved from `Train.txt`, since `Validate.txt`'s images are deliberately never
+uploaded to Kaggle - see `README.md`) was not a reliable proxy for real held-out performance here:
+CTC loss and downstream greedy-decode accuracy are not tightly coupled enough to trust for
+early stopping in this setup, though in this instance it fortunately didn't matter since the real
+metric had already plateaued anyway. **Flagged as a methodological lesson**: a future attempt at
+this should validate against a real Phase-2-style evaluation periodically, not the training
+loop's own loss signal.
 
 ## Comparison against Phase 2b (post-correction)
 
@@ -56,13 +75,14 @@ on the metric each favors).
 
 ## What this does and doesn't tell us
 
-- **This isn't proof fine-tuning can't help** - only that *this specific* setup (8 epochs,
-  fixed lr=1e-5, no learning-rate schedule, no data augmentation, no regularization beyond the
-  low learning rate itself) yields marginal gains. A more careful attempt (frozen backbone
-  layers, learning-rate schedule, more epochs with real held-out-based early stopping instead of
-  the misleading in-training dev loss, or more training data) might do better - this is a
-  materially larger effort than this run was scoped for, consistent with the same caveat noted
-  for Phase 0's CHAT fine-tuning trial.
+- **This isn't proof fine-tuning can't help - but it is evidence that "just run more epochs" of
+  this exact setup won't.** The full 8-epoch trend above plateaus almost immediately, so simply
+  extending training further (9, 20, 50 epochs at the same fixed lr=1e-5) is not expected to move
+  the needle - the model has converged to this configuration's ceiling. A genuinely different
+  setup (a learning-rate schedule/warmup, partial layer freezing, data augmentation, or more
+  training data than `Train.txt`'s ~29K lines) would be needed to test whether a *higher* ceiling
+  exists at all - this is a materially larger effort than this run was scoped for, consistent
+  with the same caveat noted for Phase 0's CHAT fine-tuning trial.
 - **Combining approaches is untested** - post-correction (Phase 2b) could in principle be applied
   on top of this fine-tuned model's beam search output too, potentially compounding both gains.
   Not attempted here.
