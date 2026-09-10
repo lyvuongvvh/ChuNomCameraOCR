@@ -3,6 +3,8 @@ experiments/*/data/
 experiments/NomNaOCR/
 experiments/phase0_validation/kaggle_dataset/
 experiments/phase0_validation/kaggle_output/
+experiments/phase2c_finetune/kaggle_dataset/
+experiments/phase2c_finetune/kaggle_output/
 *.mlmodel
 *.h5
 *.pb

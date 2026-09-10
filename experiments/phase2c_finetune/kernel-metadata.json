@@ -1,0 +1,13 @@
+{
+  "id": "lyvuongvvh/nomnaocr-finetune-phase2c",
+  "title": "NomNaOCR finetune phase2c",
+  "code_file": "kaggle_train.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["lyvuongvvh/nomnaocr-finetune-phase2c-data"],
+  "competition_sources": [],
+  "kernel_sources": []
+}
