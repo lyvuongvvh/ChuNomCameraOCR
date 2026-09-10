@@ -33,9 +33,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from translate_lib.reading import apply_reading_dict  # noqa: E402
 from translate_lib.llm_translate import translate_line  # noqa: E402
 
-# Rough, may be stale - check https://www.anthropic.com/pricing for current rates before trusting
-# this for real budgeting. Sonnet 5 placeholder rates (USD per million tokens).
-APPROX_PRICE_PER_MTOK = {"input": 3.0, "output": 15.0}
+# Sonnet 5 rates (USD per million tokens) as of this writing - check https://claude.com/pricing
+# for current rates before trusting this for real budgeting; prices can change.
+APPROX_PRICE_PER_MTOK = {"input": 2.0, "output": 10.0}
 
 
 def main() -> None:
