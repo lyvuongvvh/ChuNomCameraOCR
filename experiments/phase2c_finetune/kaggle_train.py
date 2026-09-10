@@ -39,6 +39,8 @@ def check_h5_compat(root):
 
     all_labels = f"{root}/Patches/All.txt"
     weights = f"{root}/weights/NomNaOCR_CRNNxCTC.h5"
+    print(f"weights path: {weights}, exists={os.path.exists(weights)}, "
+          f"size={os.path.getsize(weights) if os.path.exists(weights) else 'n/a'}")
     vocab = build_vocab(all_labels, min_length=1)
     max_length = max_label_length(all_labels, min_length=1)
     rec = CRNNRecognizer(vocab, max_length, weights)
@@ -63,8 +65,10 @@ def main() -> None:
     # for a version swap.
     try:
         ok = check_h5_compat(root)
-    except Exception as e:
-        print("Failed to load/run the pretrained weights:", repr(e))
+    except Exception:
+        import traceback
+        print("Failed to load/run the pretrained weights:")
+        traceback.print_exc()
         ok = False
 
     if not ok:
