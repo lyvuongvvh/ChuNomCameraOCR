@@ -26,7 +26,9 @@ import json
 import os
 import pathlib
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
@@ -53,7 +55,12 @@ def main() -> None:
                          help="Translate every line in --predictions - real cost, not a casual default.")
     parser.add_argument("--out", required=True, type=pathlib.Path)
     parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--checkpoint-every", type=int, default=10)
+    parser.add_argument("--checkpoint-every", type=int, default=25)
+    parser.add_argument("--workers", type=int, default=8,
+                         help="Concurrent API requests. The test batch ran at ~3.5s/line "
+                              "sequentially - impractical for thousands of lines, so this "
+                              "parallelizes across independent lines. 8 is a moderate default; "
+                              "lower it if you hit rate-limit (429) errors on your API tier.")
     args = parser.parse_args()
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -90,29 +97,54 @@ def main() -> None:
         print("Nothing to do.")
         return
 
+    # One client shared across threads: the anthropic SDK's client is documented as thread-safe
+    # (it's a thin wrapper over an httpx client, which supports concurrent requests).
     client = anthropic.Anthropic(api_key=api_key)
 
-    total_input_tok, total_output_tok = 0, 0
+    lock = threading.Lock()
+    total_input_tok, total_output_tok, n_errors = 0, 0, 0
     start = time.monotonic()
-    for i, img_name in enumerate(todo, start=1):
+
+    def worker(img_name: str):
         text = predictions[img_name]
         reading = apply_reading_dict(text, reading_dict)
         translation, usage = translate_line(client, text, reading, model=args.model)
-        results[img_name] = {"text": text, "reading": reading, "translation": translation}
-        total_input_tok += usage["input_tokens"]
-        total_output_tok += usage["output_tokens"]
+        return img_name, text, reading, translation, usage
 
-        if i % args.checkpoint_every == 0 or i == len(todo):
-            elapsed = time.monotonic() - start
-            est_cost = (total_input_tok / 1e6 * APPROX_PRICE_PER_MTOK["input"]
-                        + total_output_tok / 1e6 * APPROX_PRICE_PER_MTOK["output"])
-            print(f"[{i}/{len(todo)}] {elapsed:.0f}s elapsed, "
-                  f"{total_input_tok}+{total_output_tok} tokens, "
-                  f"~${est_cost:.4f} (rough estimate, verify against current pricing)")
-            args.out.parent.mkdir(parents=True, exist_ok=True)
-            args.out.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"Using {args.workers} concurrent workers")
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futures = {pool.submit(worker, name): name for name in todo}
+        completed = 0
+        for future in as_completed(futures):
+            img_name = futures[future]
+            completed += 1
+            try:
+                img_name, text, reading, translation, usage = future.result()
+                with lock:
+                    results[img_name] = {"text": text, "reading": reading, "translation": translation}
+                    total_input_tok += usage["input_tokens"]
+                    total_output_tok += usage["output_tokens"]
+            except Exception as e:
+                # One bad line (network blip, rate limit exhausting retries, etc.) shouldn't sink
+                # a multi-hour batch - log it, skip it, and let --resume pick it up on a rerun
+                # (it won't appear in `results`, so --resume will retry it, not silently drop it).
+                n_errors += 1
+                print(f"ERROR translating {img_name}: {e!r}")
 
-    print(f"Wrote {len(results)} translations to {args.out}")
+            if completed % args.checkpoint_every == 0 or completed == len(todo):
+                elapsed = time.monotonic() - start
+                with lock:
+                    est_cost = (total_input_tok / 1e6 * APPROX_PRICE_PER_MTOK["input"]
+                                + total_output_tok / 1e6 * APPROX_PRICE_PER_MTOK["output"])
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+                print(f"[{completed}/{len(todo)}] {elapsed:.0f}s elapsed, "
+                      f"{total_input_tok}+{total_output_tok} tokens, "
+                      f"~${est_cost:.4f} (rough estimate, verify against current pricing), "
+                      f"{n_errors} errors so far")
+
+    print(f"Wrote {len(results)} translations to {args.out} ({n_errors} lines failed - rerun with "
+          f"--resume to retry them)")
 
 
 if __name__ == "__main__":
