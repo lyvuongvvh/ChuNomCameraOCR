@@ -13,6 +13,17 @@ same data distribution it was already trained on. The open question here isn't "
 everything" (less likely to apply) but "will more training on data it's already fit to actually
 move the needle, or just re-fit what it's effectively already learned."
 
+## Result
+
+**Done.** 8 epochs trained on Kaggle GPU; every checkpoint evaluated against the full held-out
+set. Best checkpoint (epoch 8): Sequence Accuracy 29.4%→29.9% (+0.5pp), Character Accuracy
+84.7%→84.9% (+0.2pp) - a modest gain, similar order of magnitude to Phase 2b's post-correction,
+not a breakthrough. Notable finding: the in-training dev loss (necessarily carved from
+`Train.txt`, since `Validate.txt` is never uploaded to Kaggle) was actively misleading - it
+flagged epoch 8 as the most overfit checkpoint, but epoch 8 scored best on the real held-out set.
+Full numbers, the loss-vs-accuracy discrepancy, and a comparison against Phase 2b in
+[`results.md`](results.md).
+
 ## What's built and verified so far
 
 - `train_lib/data.py` - tf.data pipeline. Reuses `nomnaocr_lib.model.CRNNRecognizer.process_image`
