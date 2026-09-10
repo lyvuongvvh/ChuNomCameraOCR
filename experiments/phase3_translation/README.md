@@ -64,16 +64,27 @@ exists in this dataset - NomNaOCR provides OCR transcription labels only, not tr
 this is a qualitative plausibility check, not a scored evaluation the way Phase 2's Sequence
 Accuracy is.
 
+**Tested against real (not ground-truth) OCR predictions, and confirmed at scale in
+[`results.md`](results.md):** ran the same pipeline on baseline/Phase 2b/Phase 2c predictions
+for real held-out lines with actual recognition errors. Finding: post-correction (Phase 2b)
+recovers about **2.5x as many baseline error positions** as fine-tuning (Phase 2c) does uniquely
+(9.7% vs 3.9% of all baseline errors, across 11,215 error positions), and when sampled at scale
+(40 fixed positions reviewed), **nearly all fixes were genuine meaning-changing corrections**
+(wrong calendar dates, numbers, pronouns, negation particles), not cosmetic OCR noise - including
+cases like 問 "asked" being recognized as 聞 "heard", which post-correction fixed and fine-tuning
+didn't. This makes Phase 2b's modest aggregate accuracy gain a stronger practical signal for
+translation quality than the percentage alone suggests.
+
 ## What's not built yet
 
 - **A scripted, automated Stage 2** - the demonstration above was done manually in conversation
   (this being an LLM itself), not via a callable API integration. Productionizing this needs an
   actual API key (Anthropic or another provider) and real cost/latency considerations - a
   decision for the project owner before building that integration, not assumed here.
-- **End-to-end wiring to Phase 2/2b/2c's recognizer output** - this experiment used ground-truth
-  text for the Stage 2 demonstration, not actual OCR predictions (which have their own ~15-30%
-  error rate per Phase 2's results). Running the full pipeline on real recognizer output, with
-  its errors, is the real end-to-end test and hasn't been done yet.
+- **End-to-end wiring to Phase 2/2b/2c's recognizer output as a scripted pipeline** - this has
+  now been tested manually against real OCR predictions (see `results.md`), including at scale
+  (11,215 error positions analyzed), not just ground truth - but still via manual in-conversation
+  translation for the qualitative examples, not a callable script.
 - **Any evaluation methodology** - unlike Phase 2's clean Sequence/Character Accuracy against
   known-correct OCR labels, there's no modern-Vietnamese ground truth to score against
   automatically. Any real evaluation here would need either human review or sourcing a genuine
