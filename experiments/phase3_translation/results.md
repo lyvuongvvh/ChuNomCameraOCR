@@ -175,10 +175,37 @@ rate than prose does. **This is a prompt-calibration issue, not evidence that OC
 coverage, or the translations themselves are actually worse for poetry** - confirmed independently
 by points 1 and 2 above ruling out coverage and length.
 
-**Not yet fixed** - a natural next step would be telling the prompt explicitly that Nôm verse
-follows Vietnamese (not Classical Chinese) grammar and shouldn't be judged against that bar, then
-re-running the poetry subset to see if the low-confidence rate drops without hiding genuinely bad
-lines. Not done here - flagging the diagnosis, not the fix.
+### Fix, validated against the real API
+
+Rewrote `SYSTEM_PROMPT` in `translate_lib/llm_translate.py`: added an explicit explanation that
+Nôm poetry encodes spoken Vietnamese verse (not Classical Chinese), so unusual-looking word order
+is expected and not itself a sign of OCR error, and tightened the low-confidence trigger to
+require a genuinely unparseable line rather than merely "doesn't read like Classical Chinese."
+
+Tested on a 156-line poetry sample (the 6 lines spot-checked above, plus 150 random poetry
+lines) - real API, cost **$0.33**:
+
+| | Old prompt | New prompt |
+|---|---|---|
+| Low-confidence rate on this sample | **66.0%** (103/156) | **21.2%** (33/156) |
+
+72 lines flipped from flagged to confident; only 2 flipped the other way, both on genuinely
+ambiguous lines (e.g. one where the model reasonably second-guessed a terse original translation)
+- not a clear regression pattern. Of the 6 reference lines: 5 flipped to confident with equally
+fluent translations (e.g. `花春公羕𣈜春群𨱽` → "Hoa xuân rỡ ràng, ngày xuân còn dài", no longer
+second-guessed as OCR garbage); the 6th (`𦝄花限時𠬠牟默粧`) **stayed flagged**, but now for a more
+specific, genuine-sounding reason ("khó ghép thành nghĩa mạch lạc" - hard to form coherent
+meaning) - evidence the fix suppresses the spurious "not Classical Chinese" flags specifically,
+not flags in general.
+
+**21.2% is now below prose's own baseline rate (24-29%)** on this sample - arguably a slight
+overcorrection, though the sample is small (156 lines, not the full 1,823+407 poetry lines).
+
+**Not yet applied to the shipped corpus** - `data/translations_full.json` still reflects the old
+prompt (budget spent on the validation test, not a full re-run). Re-running the full poetry
+subset (~2,230 lines) with the fixed prompt would cost roughly $4-5 more; the full 7,577-line
+corpus, roughly $14 again. Neither has been run - this section documents the fix and its
+validation, not a corrected corpus.
 
 **Cross-edition consistency check (Kiều-specific, needs no ground truth):** found 60 lines where
 the post-corrected Han-Nôm text is byte-identical across 2-3 of the poem's 3 digitized editions

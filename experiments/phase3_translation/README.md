@@ -148,14 +148,14 @@ with a bonus: the "low confidence" fallback added to the prompt is now the two-l
 
 ## What's not built yet
 
-- **A prompt fix for poetry's inflated low-confidence rate** - root-caused in `results.md`: the
-  system prompt's trigger ("does not parse into coherent Classical Chinese/Han-Nom... likely OCR
-  mistakes") fits DVSKTT's real Literary Chinese but not Kiều/Lục Vân Tiên's vernacular-Vietnamese
-  verse, which was never meant to parse as Classical Chinese - confirmed by the gap surviving on
-  fully dictionary-resolved lines and at matched line length, ruling out OCR/coverage as the cause.
-  Not yet fixed: the natural next step is telling the prompt explicitly that Nôm verse follows
-  Vietnamese grammar, then re-running the poetry subset to check the rate drops without hiding
-  genuinely bad lines.
+- **Re-running the shipped corpus with the fixed prompt.** Poetry's inflated low-confidence rate
+  was root-caused (`results.md`) to the system prompt's trigger being calibrated for Classical
+  Chinese, which doesn't fit Kiều/Lục Vân Tiên's vernacular-Vietnamese verse. The fix (explaining
+  Nôm verse's grammar in the prompt, tightening the trigger) is applied in
+  `translate_lib/llm_translate.py` and validated on a 156-line poetry sample - low-confidence rate
+  dropped 66.0%→21.2% for **$0.33**. `data/translations_full.json` still reflects the *old*
+  prompt, though - re-running the full poetry subset (~$4-5) or the whole 7,577-line corpus
+  (~$14) to regenerate it with the fix hasn't been done yet (budget-paused, not abandoned).
 - **Any evaluation methodology** - unlike Phase 2's clean Sequence/Character Accuracy against
   known-correct OCR labels, there's no modern-Vietnamese ground truth to score against
   automatically. Any real evaluation here would need either human review or sourcing a genuine

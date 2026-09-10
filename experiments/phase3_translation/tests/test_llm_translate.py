@@ -69,6 +69,16 @@ class TestTranslateLine(unittest.TestCase):
         call_kwargs = client.messages.create.call_args.kwargs
         self.assertEqual(call_kwargs["thinking"], {"type": "disabled"})
 
+    def test_prompt_explains_nom_verse_grammar(self):
+        """Regression test: the low-confidence trigger originally checked only for "coherent
+        Classical Chinese/Han-Nom," which fits DVSKTT's prose but not Truyen Kieu/Luc Van Tien's
+        Nom poetry (vernacular Vietnamese verse, never meant to parse as Classical Chinese) -
+        real-API testing found this made poetry ~2x as likely to be flagged low-confidence as
+        prose, even on fully dictionary-resolved lines (see results.md). The fix explains Nom
+        verse's grammar explicitly; this guards that explanation stays in the prompt."""
+        self.assertIn("VIETNAMESE verse", SYSTEM_PROMPT)
+        self.assertIn("NOT by itself a sign of an OCR error", SYSTEM_PROMPT)
+
     def test_retries_once_on_empty_translation(self):
         client = MagicMock()
         client.messages.create.side_effect = [
