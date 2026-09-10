@@ -98,15 +98,26 @@ python scripts/translate.py \
     --out data/translations.json --max-lines 10
 ```
 
-Unit-tested with a mocked API client (`tests/test_llm_translate.py`, no real API calls/key
-needed) - request construction and response parsing are verified, but **the pipeline has not yet
-been run against the real API** (no key available in this session - see "What's not built yet").
+Unit-tested with a mocked API client (`tests/test_llm_translate.py`) and **verified against the
+real API**: a 10-line test batch (Phase 2b's corrected predictions) cost **$0.0211** (5,582 input
++ 992 output tokens) and produced 10/10 fluent, plausible translations.
+
+**Bug found and fixed during that first real run**: on one genuinely hard line (three compounding
+OCR errors producing an ungrammatical tail), the model's response consisted of *only* an internal
+`thinking` block and zero visible text - `stop_reason: "end_turn"`, not a token-limit truncation,
+just a real empty translation with no error raised. A stronger "never respond with nothing" system
+prompt instruction did not fix this on its own. **Disabling extended thinking outright
+(`thinking={"type": "disabled"}`) did** - re-tested and the same line now translates correctly,
+with a bonus: the "low confidence" fallback added to the prompt is now the two-layer defense
+(thinking disabled first, low-confidence flag second, one automatic retry third - see
+`translate_line`'s docstring) instead of relying on prompt wording alone.
 
 ## What's not built yet
 
-- **A real run against the live API** - the script above is built and unit-tested (mocked
-  client only), but has not actually called Anthropic's API yet, since no `ANTHROPIC_API_KEY` is
-  available in this session. Needs the project owner to supply a key before a first real batch.
+- **A larger real run** - only a 10-line sanity batch has been run against the live API so far.
+  The full held-out set (~7,500 lines from Phase 2b's predictions) needs `--all` and is a
+  meaningful real cost (rough estimate: $15-20 at the per-line rate observed in the test batch,
+  verify against the script's own running total rather than trusting this upfront guess).
 - **Any evaluation methodology** - unlike Phase 2's clean Sequence/Character Accuracy against
   known-correct OCR labels, there's no modern-Vietnamese ground truth to score against
   automatically. Any real evaluation here would need either human review or sourcing a genuine

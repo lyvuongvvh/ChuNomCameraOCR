@@ -22,7 +22,13 @@ seems implausible given context (a likely OCR error), use your best judgment abo
 intended character and meaning rather than translating a nonsensical reading literally - but \
 do not invent content the text does not support.
 
-Respond with ONLY the Vietnamese translation. No preamble, no explanation, no quotes around it."""
+If the line has multiple compounding errors and does not parse into coherent Classical \
+Chinese/Han-Nom even after accounting for likely OCR mistakes, still give your best-effort \
+translation of whatever you can confidently make out, then add on a new line: \
+"[LOW CONFIDENCE: <brief reason>]". Never respond with nothing.
+
+Respond with ONLY the Vietnamese translation (and, if needed, the low-confidence note). No \
+preamble, no other explanation, no quotes around it."""
 
 USER_TEMPLATE = """Original Han-Nom text: {text}
 Partial phonetic reading: {reading}
@@ -30,15 +36,35 @@ Partial phonetic reading: {reading}
 Translation:"""
 
 
-def translate_line(client, text: str, reading: str, model: str = "claude-sonnet-5") -> tuple[str, dict]:
-    """Returns (translation, usage_dict) - usage_dict has input_tokens/output_tokens for cost
-    tracking (see scripts/translate.py)."""
+def _call(client, text: str, reading: str, model: str) -> tuple[str, dict]:
     response = client.messages.create(
         model=model,
         max_tokens=500,
+        # Disabled, not just unrequested: on at least one genuinely garbled test line, this model
+        # spent its whole turn on an internal `thinking` block and produced ZERO text content
+        # (stop_reason="end_turn" with no text block at all - not a max_tokens truncation, a real
+        # empty response). Disabling thinking outright fixed that exact case in testing and isn't
+        # needed for a short, direct translation task anyway.
+        thinking={"type": "disabled"},
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": USER_TEMPLATE.format(text=text, reading=reading)}],
     )
     translation = "".join(block.text for block in response.content if block.type == "text").strip()
     usage = {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}
+    return translation, usage
+
+
+def translate_line(client, text: str, reading: str, model: str = "claude-sonnet-5") -> tuple[str, dict]:
+    """Returns (translation, usage_dict) - usage_dict has input_tokens/output_tokens for cost
+    tracking (see scripts/translate.py), summed across attempts if a retry happened.
+
+    One retry on an empty translation (belt-and-suspenders on top of disabling thinking above -
+    an empty response was observed even with a clear "never respond with nothing" system prompt
+    instruction, so this only trusts the fix, not the prompt wording, to prevent silent empty
+    results)."""
+    translation, usage = _call(client, text, reading, model)
+    if not translation:
+        retry_translation, retry_usage = _call(client, text, reading, model)
+        translation = retry_translation
+        usage = {k: usage[k] + retry_usage[k] for k in usage}
     return translation, usage

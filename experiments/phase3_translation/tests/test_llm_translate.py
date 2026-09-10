@@ -58,6 +58,47 @@ class TestTranslateLine(unittest.TestCase):
         self.assertIn("sứ thông háo", user_content)
         self.assertEqual(user_content, USER_TEMPLATE.format(text="使通好", reading="sứ thông háo"))
 
+    def test_thinking_disabled(self):
+        """Regression test: a real API call on a genuinely garbled test line once returned a
+        response consisting ONLY of a `thinking` block and zero text content (stop_reason=
+        "end_turn", not a max_tokens truncation) - a real empty translation with no error raised.
+        Disabling thinking fixed that case in live testing; this just guards the parameter stays
+        set so a future edit can't silently drop it."""
+        client = make_mock_client("output")
+        translate_line(client, "text", "reading")
+        call_kwargs = client.messages.create.call_args.kwargs
+        self.assertEqual(call_kwargs["thinking"], {"type": "disabled"})
+
+    def test_retries_once_on_empty_translation(self):
+        client = MagicMock()
+        client.messages.create.side_effect = [
+            SimpleNamespace(
+                content=[SimpleNamespace(type="thinking", text="")],  # no text block at all
+                usage=SimpleNamespace(input_tokens=50, output_tokens=60),
+            ),
+            SimpleNamespace(
+                content=[SimpleNamespace(type="text", text="Bản dịch sau khi thử lại.")],
+                usage=SimpleNamespace(input_tokens=50, output_tokens=10),
+            ),
+        ]
+        translation, usage = translate_line(client, "text", "reading")
+        self.assertEqual(translation, "Bản dịch sau khi thử lại.")
+        self.assertEqual(client.messages.create.call_count, 2)
+        # usage is summed across both attempts, so cost tracking isn't silently undercounted
+        self.assertEqual(usage, {"input_tokens": 100, "output_tokens": 70})
+
+    def test_does_not_retry_when_first_attempt_succeeds(self):
+        client = make_mock_client("Bản dịch thành công ngay lần đầu.")
+        translate_line(client, "text", "reading")
+        self.assertEqual(client.messages.create.call_count, 1)
+
+    def test_still_empty_after_retry_returns_empty_not_an_error(self):
+        client = make_mock_client("")  # every call returns empty
+        translation, usage = translate_line(client, "text", "reading")
+        self.assertEqual(translation, "")
+        self.assertEqual(client.messages.create.call_count, 2)
+        self.assertEqual(usage, {"input_tokens": 84, "output_tokens": 14})
+
 
 if __name__ == "__main__":
     unittest.main()
