@@ -17,6 +17,8 @@ import os
 import sys
 import time
 
+import h5py
+
 # A Train.txt sample, not Validate.txt: this Kaggle dataset never contains Validate.txt's images
 # by construction (see the module docstring), so a Validate.txt sample here would always fail
 # with a file-not-found error unrelated to H5/Keras compatibility - the bug that broke kernel v7.
@@ -33,6 +35,33 @@ def find_dataset_root(marker="train.py", search_root="/kaggle/input"):
         if marker in filenames:
             return dirpath
     raise FileNotFoundError(f"{marker} not found under {search_root} - dataset not mounted as expected")
+
+
+def save_legacy_keras2_weights(model, filepath):
+    """Write model weights in Keras 2's legacy HDF5 format directly (root 'layer_names' attr +
+    per-layer named group with 'weight_names' attr + datasets), bypassing Keras 3's own
+    save_weights() entirely - confirmed on kernel v8 that Keras 3's native weights-only H5 format
+    uses a structurally different layout (generic auto-names like "conv2d_3" in a "layers/" tree,
+    no root 'layer_names' attr at all) that this project's local Keras 2/TF 2.10
+    Model.load_weights() cannot read ("Model expected 19 layers, found 0 saved layers").
+
+    Uses model.layers/layer.get_weights() directly, so this preserves our actual layer names
+    (e.g. "block1_conv1") natively - no need to reverse-engineer Keras 3's auto-naming scheme the
+    way the one-off local converter script (used to validate kernel v8's checkpoint) had to.
+    Model.load_weights() matches layers positionally (this project never uses by_name=True), so
+    the exact weight_names strings only need to be internally self-consistent, not match any
+    particular convention.
+    """
+    weighted_layers = [layer for layer in model.layers if layer.get_weights()]
+    with h5py.File(filepath, "w") as f:
+        f.attrs["layer_names"] = [layer.name.encode("utf8") for layer in weighted_layers]
+        for layer in weighted_layers:
+            g = f.create_group(layer.name)
+            weights = layer.get_weights()
+            weight_names = [f"{layer.name}_w{i}".encode("utf8") for i in range(len(weights))]
+            g.attrs["weight_names"] = weight_names
+            for wname, arr in zip(weight_names, weights):
+                g.create_dataset(wname.decode("utf8"), data=arr)
 
 
 def check_h5_compat(root):
@@ -106,11 +135,15 @@ def main() -> None:
     recognizer = CRNNRecognizer(vocab, max_length, weights)
     model = recognizer.model
 
-    # Start at 1 epoch: this is a validation run to confirm GPU training actually works and that
-    # a Keras-3-saved checkpoint round-trips correctly through this project's local TF 2.10 eval
-    # pipeline (untested until a real checkpoint is downloaded and tried there) before committing
-    # to a longer run. Bump once that's confirmed.
-    EPOCHS = int(os.environ.get("NOMNAOCR_EPOCHS", 1))
+    # Kernel v8's 1-epoch validation run confirmed GPU training works (~7.7 min/epoch on a P100,
+    # ~12x faster than this project's measured local CPU rate) and that a checkpoint round-trips
+    # correctly into the local TF 2.10 eval pipeline (via save_legacy_keras2_weights above, once
+    # converted - see README.md). That one epoch alone didn't visibly change any single greedy-
+    # decoded example yet (avg_train_loss was already low, 0.061, before this run even started),
+    # so a real attempt at moving Sequence/Character Accuracy needs more epochs - 8 is a
+    # reasonable middle ground between giving training room to matter and session length
+    # (~8 * 7.7min =~ 1 hour), adjustable via NOMNAOCR_EPOCHS.
+    EPOCHS = int(os.environ.get("NOMNAOCR_EPOCHS", 8))
     BATCH_SIZE = int(os.environ.get("NOMNAOCR_BATCH_SIZE", 32))
     LEARNING_RATE = float(os.environ.get("NOMNAOCR_LR", 1e-5))
     DEV_FRACTION = 0.05  # small in-training monitoring slice, carved from Train.txt only -
@@ -168,13 +201,12 @@ def main() -> None:
               f"dev_loss={dev_loss:.4f}, {n_batches} batches, {n_skipped} non-finite skipped, "
               f"{elapsed:.0f}s ({elapsed / max(n_batches, 1):.3f}s/batch)")
 
-        # Keras 3 (this Kaggle kernel's TF) requires a .weights.h5 extension for save_weights()
-        # in the legacy HDF5 weights-only format - plain .h5 raises an error under Keras 3. This
-        # still ends in ".h5", so this project's local TF 2.10 load_weights() (which only checks
-        # for that suffix, not an exact ".weights.h5" match) should still accept it - confirmed
-        # by actually downloading and loading one of these checkpoints locally, not assumed.
-        ckpt_path = f"{out_dir}/finetuned_epoch{epoch}.weights.h5"
-        model.save_weights(ckpt_path)
+        # save_legacy_keras2_weights, not model.save_weights(): confirmed on kernel v8 that
+        # Keras 3's own save_weights() produces a file this project's local TF 2.10
+        # Model.load_weights() cannot read at all ("Model expected 19 layers, found 0 saved
+        # layers") - see that function's docstring above.
+        ckpt_path = f"{out_dir}/finetuned_epoch{epoch}.h5"
+        save_legacy_keras2_weights(model, ckpt_path)
         print(f"Saved checkpoint to {ckpt_path}")
 
     print("Training complete.")
