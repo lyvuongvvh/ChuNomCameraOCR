@@ -26,7 +26,7 @@ in usable form (NomNaOCR's own dataset has OCR transcription labels, not transla
 
 ## Stage 1: dictionary coverage - a real, honest limitation
 
-Combines two sources (`scripts/build_reading_dict.py`):
+Combines three sources (`scripts/build_reading_dict.py`):
 - **Unicode's Unihan database** (`kVietnamese` field) - authoritative, permissively licensed
   (Unicode Character Database terms), but covers only **50.2%** of this project's own character
   vocabulary (7,479 characters, from `Patches/All.txt`) - and notably incomplete even for common
@@ -37,13 +37,20 @@ Combines two sources (`scripts/build_reading_dict.py`):
   high-frequency Nôm-invented function words Unihan has no concept of at all (e.g. 𧵑 "của", 㐌
   "đã", 吧 "và"). **No explicit license found on that repository** - used here for research/
   prototyping only; flagged as an open question before any production use.
+- **VNPF's "Bảng tra chữ Nôm"** (Hồ Lê, 1976), queried live at nomfoundation.org for exactly the
+  characters the two sources above don't cover - resolved **356 of 3,645** of them (e.g. 以→"dĩ",
+  北→"bắc"/"bác"/"bấc"/"bậc"/"bước"). Empirically *not* a superset of Unihan (it doesn't resolve
+  為 or 何, both very basic characters) - it catalogs characters as used to write Nôm, not a
+  general Hán-Việt dictionary, so it's a genuine complement rather than a bigger version of the
+  same thing. Used under nomfoundation.org's terms of use (non-commercial/research use with
+  attribution; only commercial redistribution requires permission).
 
-**Combined coverage: 51.3%** (3,834 of 7,479 characters) - barely better than Unihan alone, since
-rime-chunom's small vocabulary mostly doesn't overlap with what Unihan is already missing.
-Roughly **half of this project's character vocabulary has no dictionary reading at all.**
-Uncovered characters are passed through unchanged (bracketed, e.g. `[以]`), not guessed - Stage 2
-is expected to carry the majority of the real translation work using the original text and
-context, not just patch small gaps in an otherwise-complete gloss.
+**Combined coverage: 56.0%** (4,190 of 7,479 characters) - up from 51.3% with Unihan+rime-chunom
+alone, a real but modest +4.7pp gain, not a fix for the underlying gap. **Over 40% of this
+project's character vocabulary still has no dictionary reading at all.** Uncovered characters are
+passed through unchanged (bracketed, e.g. `[何]`), not guessed - Stage 2 is expected to carry the
+majority of the real translation work using the original text and context, not just patch small
+gaps in an otherwise-complete gloss.
 
 ## Stage 2: LLM fluency pass - demonstrated, not yet automated
 
@@ -136,16 +143,24 @@ with a bonus: the "low confidence" fallback added to the prompt is now the two-l
 ```bash
 python scripts/build_reading_dict.py --vocab-labels ../NomNaOCR/Patches/All.txt \
     --out data/reading_dict.json
-python -m unittest tests.test_reading -v
+python -m unittest tests.test_reading tests.test_build_reading_dict -v
 ```
+
+The build queries VNPF's live dictionary tool for uncovered characters (see above) - pass
+`--skip-btcn` for a fast, network-light rerun during dev iteration (Unihan+rime-chunom only,
+51.3% coverage instead of 56.0%).
 
 ## Known simplifications (flagged, not silently assumed)
 
-- **Dictionary coverage is ~51%, not complete** - see above. This is a hard limitation of
+- **Dictionary coverage is 56%, not complete** - see above. This is a hard limitation of
   publicly available data, not a bug to fix by trying harder at the same sources.
 - **`rime-chunom`'s license is unclear** - used for research/prototyping; would need resolving
   before any production/public-facing use.
+- **BTCN (VNPF) is scraped, not a downloadable dataset** - queried live per run, batched and
+  rate-limited to stay polite to a small nonprofit's server; used for non-commercial research per
+  its terms of use, not redistributed.
 - **First reading only** - `apply_reading_dict` uses each character's first listed reading;
-  Unihan/rime-chunom sometimes list multiple candidates (e.g. homographs with different
-  readings by meaning), and no attempt is made to disambiguate by context at the dictionary
-  stage - that disambiguation is left entirely to Stage 2.
+  the underlying sources sometimes list multiple candidates (e.g. homographs with different
+  readings by meaning, or BTCN's several unrelated readings for one character like 北), and no
+  attempt is made to disambiguate by context at the dictionary stage - that disambiguation is
+  left entirely to Stage 2.

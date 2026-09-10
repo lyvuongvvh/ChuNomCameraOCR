@@ -2,7 +2,7 @@
 recognized Han-Nom text, producing a best-effort space-separated Sino-Vietnamese/Nom reading
 string. This is NOT a translation - it's a per-character phonetic gloss, roughly analogous to
 giving each character its "sound" without resolving grammar, word order, or word-sense
-ambiguity. Only ~51% of this project's character vocabulary has a known reading (see
+ambiguity. Only 56% of this project's character vocabulary has a known reading (see
 README.md) - characters with none are passed through unchanged in brackets, not guessed, so
 Stage 2 can tell resolved readings apart from gaps it needs to fill from context.
 """
