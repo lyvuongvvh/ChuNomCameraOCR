@@ -125,8 +125,16 @@ real API**: a 10-line test batch (Phase 2b's corrected predictions) cost **$0.02
 **Confirmed at larger scale (2,000 lines, budget-capped):** real run over the first 2,000 lines
 of Phase 2b's corrected predictions, 8 concurrent workers, cost **$4.02** (1,115,415 input +
 179,128 output tokens, ~$0.0020/line - consistent with the 10-line rate), **0 errors**, 901s
-wall-clock. Output in `data/translations_2000.json`. This was deliberately capped under a $5
-budget the user set, not run to the full ~7,577-line set - see "What's not built yet."
+wall-clock. Output in `data/translations_2000.json`.
+
+**Completed at full scale: all 7,577 lines.** The 2,000-line sample above turned out to be 100%
+Đại Việt Sử Ký Toàn Thư prose (a manifest-ordering artifact, not intentional) - the remaining
+5,577 lines include both poetic works (Truyện Kiều's 3 editions, Lục Vân Tiên), which the 2,000
+line sample had zero coverage of. Completing it cost **$9.96** more (**$14.00 total**), **0
+errors**. Output in `data/translations_full.json`. Finding: poetry's self-flagged low-confidence
+rate (56-67%) is roughly double prose's (24-29%), not explained by worse OCR or more dictionary
+gaps - see `results.md` for the full breakdown and a Kiều-specific cross-edition consistency
+check.
 
 **Bug found and fixed during that first real run**: on one genuinely hard line (three compounding
 OCR errors producing an ungrammatical tail), the model's response consisted of *only* an internal
@@ -140,11 +148,11 @@ with a bonus: the "low confidence" fallback added to the prompt is now the two-l
 
 ## What's not built yet
 
-- **The complete held-out set** - 2,000 of 7,577 lines from Phase 2b's predictions have been
-  translated via the real API (see above). The remaining ~5,577 lines need `--all` (or
-  `--resume` against `translations_2000.json` plus a higher `--max-lines`) and, at the confirmed
-  ~$0.0020/line rate, would cost roughly **$11-12 more** (~$15-16 total) - a real cost, not run
-  without the user's explicit go-ahead given an explicit $5-per-batch budget constraint.
+- **Why poetry translates with much lower self-reported confidence than prose** - a real,
+  specific open question surfaced by the full run (see `results.md`), not explained by OCR
+  accuracy or dictionary coverage differences. Would need either a targeted prompt experiment
+  (is the low-confidence trigger implicitly prose-shaped?) or a human-reviewed sample of poetry
+  translations to resolve.
 - **Any evaluation methodology** - unlike Phase 2's clean Sequence/Character Accuracy against
   known-correct OCR labels, there's no modern-Vietnamese ground truth to score against
   automatically. Any real evaluation here would need either human review or sourcing a genuine

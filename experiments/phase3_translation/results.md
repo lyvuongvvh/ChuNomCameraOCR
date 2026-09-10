@@ -95,6 +95,55 @@ self-reported confidence:
   (→ "qua lại") and `[侍]` in `[侍]御史` (→ correctly reconstructing the official title "Thị ngự
   sử") resolved correctly from surrounding context alone.
 
+## Automated pipeline at full scale: all 7,577 lines, prose vs. poetry
+
+Completed the run: all 7,577 lines (previously only the 2,000-line DVSKTT-only sample above) -
+**$14.00 total real cost** ($4.02 + $9.96 for the remaining 5,577 lines), **0 errors**. Output in
+`data/translations_full.json`.
+
+**The 2,000-line sample above was entirely Đại Việt Sử Ký Toàn Thư (DVSKTT) prose - 0 lines from
+either poetic work (Truyện Kiều's 3 editions, Lục Vân Tiên), because of manifest ordering.** That
+matters: completing the full set surfaced a large, genre-driven gap the prose-only sample
+completely missed.
+
+| Work | Lines | Low-confidence rate |
+|---|---|---|
+| DVSKTT (5 volumes, prose) | 5,347 | 23.9%–29.3% |
+| Truyện Kiều (3 editions, poetry) | 1,823 | 56.0%–66.7% |
+| Lục Vân Tiên (poetry) | 407 | 61.9% |
+| **Overall** | **7,577** | **36.7%** |
+
+Poetry's low-confidence rate is roughly **double** prose's. Two obvious explanations don't hold up:
+- **Not worse OCR** - Phase 2's own subset breakdown found poem and prose Character Accuracy
+  nearly identical (84.8% vs 84.7%) and CER comparable, on the recognizer's output directly.
+- **Not more dictionary gaps** - poetry lines actually have *fewer* Stage 1 dictionary gaps per
+  line (0.22–0.35) than prose (0.93–1.34). Of the gaps poetry *does* have, though, 73–85% are
+  Private-Use-Area codepoints (project/font-specific glyphs with no standard Unicode assignment,
+  so no external dictionary - including all four Stage 1 sources - could ever resolve them,
+  structurally, not just by chance), versus only 1.4–6.2% for DVSKTT.
+
+Neither fully explains a 2x gap this size. The remaining, untested hypothesis: poetic register
+itself (compressed grammar, allusion, elision for meter) is genuinely harder for the model to
+render confidently, and/or the system prompt's low-confidence trigger ("does not parse into
+coherent Classical Chinese/Han-Nom") is implicitly prose-shaped - verse isn't supposed to read
+like classical Chinese prose, so the model may flag normal poetic structure more readily than
+warranted. **Not resolved here** - flagged as a real, specific open question rather than guessed
+at further.
+
+Spot-checked 5 low-confidence Kiều lines: all cite a genuine unresolved character (usually a
+Private-Use-Area glyph) as the reason, not spurious flagging - consistent with the earlier
+DVSKTT-only spot-check finding honest flags, just at a higher rate for this genre.
+
+**Cross-edition consistency check (Kiều-specific, needs no ground truth):** found 60 lines where
+the post-corrected Han-Nôm text is byte-identical across 2-3 of the poem's 3 digitized editions
+(1866/1871/1872) - a real check Kiều's multi-edition structure uniquely allows. Sampled 3: two
+produced translations matching in meaning despite independent model calls (e.g. "計之仍浽育塘" →
+both editions' translations agree on "kể ra vẫn còn nuôi dưỡng lòng mong muốn ấy," down to the
+same low-confidence phrasing); one genuinely hard line ("牢𫽄別意思之") produced two translations
+that diverge more (treating 牢 as "prison" vs. as an untranslated filler) - both flagged low
+confidence by the model in both editions, consistent with the flag correctly predicting
+instability. Only a 3-line spot-check, not a full audit of all 60.
+
 ## Known simplifications (flagged, not silently assumed)
 
 - **Same-length restriction excludes 583 of 7,577 lines (7.7%)** where baseline/epoch8/
