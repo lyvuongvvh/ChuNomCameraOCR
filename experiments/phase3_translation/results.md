@@ -73,6 +73,28 @@ generalizes. Combined with the quantitative fix-rate gap, **post-correction (Pha
 stronger lever for downstream translation quality specifically**, consistent with (and now backed
 by much more evidence than) the phase-level Sequence Accuracy comparison (+3.0pp vs +0.5pp).
 
+## Automated pipeline at scale: 2,000-line spot-check
+
+Ran the scripted Stage 2 pipeline (`scripts/translate.py`, real Anthropic API) over 2,000 of
+Phase 2b's 7,577 corrected-prediction lines - see `README.md` for the run's cost ($4.02, 0
+errors). Spot-checked 8 randomly sampled translations plus scanned all 2,000 outputs for
+self-reported confidence:
+
+- **0 of 2,000 empty translations** - the `thinking={"type": "disabled"}` fix holds at scale, not
+  just on the single line it was diagnosed against.
+- **535 of 2,000 (26.8%) carry the system prompt's `[LOW CONFIDENCE: ...]` tag.** Spot-checking 5
+  of these confirms honest, not spurious, flagging - genuinely garbled/truncated OCR lines where
+  the model still attempts a translation but explicitly signals low trust rather than presenting
+  a guess as fact (e.g. "câu bị cắt ngang ở cuối," "nhiều khả năng lỗi OCR"). This is a real,
+  larger-than-expected data point on downstream usability: roughly 1 in 4 lines in this
+  unfiltered 2,000-line sample has OCR damage severe enough that the model itself doesn't trust
+  its own translation.
+- **8 randomly sampled translations were all fluent and contextually correct**, including cases
+  requiring real inference beyond Stage 1's reading: `登庸` correctly read as the proper name
+  "Đăng Dung" (not translated literally), and dictionary-unresolved characters like `[徃]`
+  (→ "qua lại") and `[侍]` in `[侍]御史` (→ correctly reconstructing the official title "Thị ngự
+  sử") resolved correctly from surrounding context alone.
+
 ## Known simplifications (flagged, not silently assumed)
 
 - **Same-length restriction excludes 583 of 7,577 lines (7.7%)** where baseline/epoch8/
