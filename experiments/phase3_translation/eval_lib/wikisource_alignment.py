@@ -1,18 +1,21 @@
-"""Ground-truth alignment for Truyen Kieu: matches each NomNaOCR patch (one Nom line, already
-recognized and read via Stage 1/2) to its verse number and modern Quoc Ngu text in the real,
-complete 3254-verse poem - so Phase 3's translations can finally be scored against a genuine
-parallel corpus instead of judged qualitatively (see results.md, "no ground truth" limitation).
+"""Ground-truth alignment engine, shared across NomNaOCR's verse works (Truyen Kieu, Luc Van
+Tien): matches each OCR patch (one Nom line, already recognized and read via Stage 1/2) to its
+verse number and modern Quoc Ngu text in the real, complete poem on Vietnamese Wikisource - so
+Phase 3's translations can finally be scored against a genuine parallel corpus instead of judged
+qualitatively (see results.md, "no ground truth" limitation). Both works were originally composed
+in Vietnamese verse (unlike DVSKTT's Literary Chinese prose), so a clean modern-spelling edition
+IS the ground truth directly, no translation step needed.
 
-Source of the reference text: Vietnamese Wikisource's "Truyen Kieu" page
-(https://vi.wikisource.org/wiki/Truyen_Kieu), same underlying work as NomNaOCR's three digitized
-editions (1866/1871/1872). Public domain (author died 1820; page tagged {{PD-old}}).
+Why alignment is needed at all (not just "manifest order == verse order"): each digitized edition
+only covers a few hundred of a poem's few-thousand verses (spot-digitized pages, not the whole
+book), so OCR line N is NOT verse N - it could be any verse, as long as the *order* is preserved
+within an edition (pages are scanned/patch-indexed in reading order, never shuffled). That turns
+this into a subsequence alignment problem: find the best strictly-increasing mapping of OCR lines
+onto verses, skipping over undigitized verses, minimizing total text distance.
 
-Why alignment is needed at all (not just "manifest order == verse order"): each edition's
-manifest only covers a few hundred of the 3254 verses (spot-digitized pages, not the whole book),
-so OCR line N is NOT verse N - it could be any verse, as long as the *order* is preserved within
-an edition (pages are scanned/patch-indexed in reading order, never shuffled). That turns this
-into a subsequence alignment problem: find the best strictly-increasing mapping of OCR lines onto
-verses, skipping over undigitized verses, minimizing total text distance.
+Work-specific wikitext quirks (verse markers, `<ref>` footnotes) are handled here since both
+matter for correctness; work-specific image-filename conventions are handled by the shared
+`parse_img_sort_key` below, which is naming-scheme-agnostic (see its docstring).
 """
 from __future__ import annotations
 
@@ -40,37 +43,59 @@ def _load_edit_distance():
 
 edit_distance = _load_edit_distance()
 
-VERSE_MARKER_RE = re.compile(r"\{\{số\|(\d+)\}\}")
-IMG_NAME_RE = re.compile(r"page0*(\d+)([ab]?)_0*(\d+)")
+VERSE_MARKER_RE = re.compile(r"\{\{s.\|(\d+)\}\}")
+REF_TAG_RE = re.compile(r"<ref[^>]*>.*?</ref>", re.DOTALL)
+VARIANT_READING_RE = re.compile(r"\{\{khác\|([^|}]*)\|[^}]*\}\}")  # {{khác|A|B}} = "A, variant B"
+STRAY_TEMPLATE_RE = re.compile(r"\{\{[^}]*\}\}")  # catch-all for editorial markers like {{ba sao}}
+# Deliberately NOT anchored on a "page" literal: NomNaOCR's editions use two unrelated filename
+# schemes (Kieu's "pageNNN[ab]_M.jpg", Luc Van Tien's "nlvnpf-0059-PPP_M.jpg") and this needs to
+# work for both. Anchoring on ".jpg" at the end and scanning left-to-right naturally skips any
+# non-matching prefix (e.g. "nlvnpf-0059-") since it can't reach the end-of-string anchor from
+# there - see parse_img_sort_key's docstring/tests for the concrete trace.
+IMG_NAME_RE = re.compile(r"(\d+)([ab]?)_(\d+)\.jpg$")
 
 
-def parse_wikisource_poem(raw_wikitext: str) -> list[tuple[int, str]]:
-    """Parses the <poem>...</poem> block of Vietnamese Wikisource's raw wikitext for Truyen
-    Kieu into an ordered list of (verse_number, text), 1-indexed. Every 5th line carries an
-    explicit {{so|N}} (accented "số") marker - used to anchor numbering rather than assuming
-    no lines were ever dropped/merged upstream; un-marked lines are numbered by simple
-    continuation from the last marker.
+def parse_wikisource_poem(raw_wikitext: str, start_number: int = 1) -> list[tuple[int, str]]:
+    """Parses the <poem>...</poem> block of a Vietnamese Wikisource verse page into an ordered
+    list of (verse_number, text), starting at start_number (for concatenating a multi-page work
+    like Luc Van Tien - see build_lvt_ground_truth.py).
+
+    Numbers by pure sequential count, NOT by trusting each line's {{so|N}} (accented "số")
+    marker value - markers are stripped as noise but their number is otherwise ignored. This is
+    a deliberate downgrade from an earlier version that used markers as authoritative: that
+    worked for Kieu (its markers are self-consistent and match sequential count exactly) but
+    broke on Luc Van Tien's real data, which has genuine transcription errors - e.g. part I's
+    markers read ...20, 35, 30, 45, 40, 45, 50... where the surrounding strict every-5-lines
+    pattern makes it obvious two adjacent pairs got transposed (should be ...20, 25, 30, 35, 40,
+    45, 50...). Trusting that value would have produced a BACKWARDS-jumping verse sequence.
+    Pure sequential count is immune to this: it only assumes actual poem lines were never
+    reordered or duplicated, not that every marker's digits were transcribed correctly.
+
+    Also cleans two other real quirks found in Luc Van Tien's wikitext (not present in Kieu's):
+    inline <ref>...</ref> footnotes (stripped whole - editorial annotations, not poem text),
+    and {{khác|A|B}} "variant reading" templates (kept as just A, the primary reading). Any
+    OTHER bare template left on its own line (e.g. "{{ba sao}}", an editorial section-break
+    marker) is dropped as a non-verse line rather than accidentally ingested as verse text.
     """
     match = re.search(r"<poem>(.*?)</poem>", raw_wikitext, re.DOTALL)
     if not match:
         raise ValueError("no <poem>...</poem> block found in wikitext")
-    body = match.group(1)
+    body = REF_TAG_RE.sub("", match.group(1))
 
     verses = []
-    next_number = 1
+    number = start_number
     for line in body.split("\n"):
         line = line.strip("\t")
         if not line.strip():
             continue
-        marker = VERSE_MARKER_RE.search(line)
-        if marker:
-            next_number = int(marker.group(1))
-            line = VERSE_MARKER_RE.sub("", line)
+        line = VERSE_MARKER_RE.sub("", line)
+        line = VARIANT_READING_RE.sub(r"\1", line)
+        line = STRAY_TEMPLATE_RE.sub("", line)
         text = line.strip().strip("\t ")
         if not text:
             continue
-        verses.append((next_number, text))
-        next_number += 1
+        verses.append((number, text))
+        number += 1
     return verses
 
 
@@ -98,9 +123,12 @@ def normalize(text: str) -> str:
 
 
 def parse_img_sort_key(img_name: str) -> tuple[int, str, int]:
-    """Sort key reproducing each edition's true page/reading order from its filename.
-    Handles both naming conventions seen across the three Kieu editions: "pageNNN_M" (1871,
-    no recto/verso suffix) and "pageNNa_M"/"pageNNb_M" (1866/1872, 'a'=recto before 'b'=verso).
+    """Sort key reproducing each edition's true page/reading order from its filename. Handles
+    every naming convention seen across NomNaOCR's verse works without needing a work-specific
+    regex: Kieu's "pageNNN_M" (1871, no recto/verso suffix), "pageNNa_M"/"pageNNb_M" (1866/1872,
+    'a'=recto before 'b'=verso), and Luc Van Tien's "nlvnpf-0059-PPP_M" (no letter suffix, and no
+    "page" substring at all) - IMG_NAME_RE anchors on the trailing "_M.jpg" instead of any
+    work-specific prefix, so an unrelated prefix like "nlvnpf-0059-" is simply skipped over.
     """
     m = IMG_NAME_RE.search(img_name)
     if not m:

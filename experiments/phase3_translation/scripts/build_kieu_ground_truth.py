@@ -20,7 +20,7 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from eval_lib.kieu_ground_truth import (  # noqa: E402
+from eval_lib.wikisource_alignment import (  # noqa: E402
     align_edition,
     parse_img_sort_key,
     parse_wikisource_poem,

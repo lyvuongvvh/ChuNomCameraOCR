@@ -217,15 +217,17 @@ that diverge more (treating 牢 as "prison" vs. as an untranslated filler) - bot
 confidence by the model in both editions, consistent with the flag correctly predicting
 instability. Only a 3-line spot-check, not a full audit of all 60.
 
-## A real parallel corpus for Kiều - ground-truth alignment against Wikisource
+## A real parallel corpus for Kiều and Lục Vân Tiên - ground-truth alignment against Wikisource
 
 The one gap called out everywhere above - "no modern-Vietnamese ground truth to score
-translations against" - has a fix for Truyện Kiều specifically: unlike DVSKTT (a Han source
-needing an actual translation) or Lục Vân Tiên (not yet done), Kiều's source text is ALREADY in
-Vietnamese - the poem was composed in Nôm verse, so a clean modern-spelling edition is itself the
-ground truth, no translation step needed. Vietnamese Wikisource hosts the complete, numbered
-3,254-verse poem (public domain; https://vi.wikisource.org/wiki/Truyện_Kiều), matching the same
-work NomNaOCR's three editions (1866/1871/1872) digitized.
+translations against" - has a fix for Truyện Kiều and Lục Vân Tiên specifically: unlike DVSKTT (a
+Han source needing an actual translation), both poems' source text is ALREADY in Vietnamese - each
+was composed in Nôm verse, so a clean modern-spelling edition is itself the ground truth, no
+translation step needed. Vietnamese Wikisource hosts both complete poems: Kiều as a single
+numbered 3,254-verse page (public domain; https://vi.wikisource.org/wiki/Truyện_Kiều), Lục Vân
+Tiên as 4 sub-pages totaling ~2,082 verses (https://vi.wikisource.org/wiki/Lục_Vân_Tiên_(bản_Quốc_ngữ_2082_câu)),
+matching the same works NomNaOCR's editions digitized (Kiều: 1866/1871/1872; Lục Vân Tiên: one
+edition).
 
 **Why this needs real alignment, not just manifest order:** each edition's manifest only covers a
 few hundred spot-digitized verses out of 3,254 (482/639/702 for 1866/1871/1872) - OCR line N is
@@ -233,7 +235,7 @@ not verse N, it could be any verse, as long as order is preserved (pages are sca
 order, never shuffled). This is a subsequence-alignment problem: find the best strictly-increasing
 mapping of each edition's OCR lines onto the full verse list, skipping undigitized verses.
 
-**Approach (`eval_lib/kieu_ground_truth.py`, `scripts/build_kieu_ground_truth.py`):** a standard
+**Approach (`eval_lib/wikisource_alignment.py`, `scripts/build_kieu_ground_truth.py`):** a standard
 weighted subsequence-alignment DP scored by real Levenshtein distance between each line's Stage-1
 phonetic reading (already computed, not the LLM's fluent `translation` - Nôm poetry's reading is
 close to the verse's actual wording, since the characters are chosen for their Vietnamese sound)
@@ -302,21 +304,65 @@ Output: `data/kieu_ground_truth.json` (gitignored, like other `data/` outputs), 
 `img_name`, each entry giving `work`, `verse_number`, `reference_text`, `ocr_reading`, `distance`,
 `similarity`.
 
-**Not yet done:** using this ground truth to actually score Phase 3's `translation` field (as
+### Extending to Lục Vân Tiên: real transcription quirks, not just a rerun
+
+Same engine (`scripts/build_lvt_ground_truth.py`), reused unchanged for the alignment DP itself -
+but Lục Vân Tiên's Wikisource text surfaced two new real quirks Kiều's didn't have, both found by
+checking the *parsed output* against the source rather than assuming a second work would behave
+like the first:
+
+- **The `{{số|N}}` verse markers have genuine transcription errors.** An earlier version of
+  `parse_wikisource_poem` trusted each marker's number as authoritative (correct for Kiều - its
+  markers are self-consistent and match sequential line count exactly). Lục Vân Tiên's part I
+  reads `...20, 35, 30, 45, 40, 45, 50...` where the surrounding strict every-5-lines pattern
+  makes it obvious two adjacent marker pairs got transposed in the source (should read `...20,
+  25, 30, 35, 40, 45, 50...`). Trusting the marker value there produced verse numbers jumping
+  *backwards* (39 → 30), violating the alignment DP's core assumption that verse order is
+  monotonic. Fixed by switching to pure sequential counting - markers are stripped as noise but
+  their digit is no longer used for anything - which only assumes actual poem lines were never
+  reordered, not that every marker digit was transcribed correctly. This didn't change Kiều's
+  output (its markers already agreed with sequential count).
+- **Inline `<ref>` footnotes and two flavors of editorial template.** Lục Vân Tiên's wikitext has
+  footnotes attached mid-verse (`<ref>...</ref>`, stripped whole), a `{{khác|A|B}}` "variant
+  reading" template appearing as the first word of one verse (resolved to its primary form `A`,
+  not dropped - that word is part of the verse), and a bare `{{ba sao}}` section-break marker on
+  its own line (dropped entirely - it isn't a verse, and leaving it in would have shifted every
+  subsequent verse's number by one). None of these appear in Kiều's cleaner Wikisource page.
+
+Parsed verse count after these fixes: exactly **2,082** across the 4 sub-pages, matching the
+page's own title ("bản Quốc ngữ 2082 câu").
+
+**Results (407 lines, NomNaOCR's single digitized edition):**
+
+| Similarity ≥0.7 | 0.4-0.7 | <0.4 | Avg similarity |
+|---|---|---|---|
+| 158 (38.8%) | 173 (42.5%) | 76 (18.7%) | 0.593 |
+
+Markedly lower confidence than Kiều's 65.2%/0.739 average. Not root-caused further here (would
+need comparing Stage 1 dictionary coverage and OCR/reading quality specifically on Lục Vân Tiên's
+subset, not done) - flagged as an open question rather than assumed to be an alignment bug, since
+spot-checks of both the best (`similarity` 1.0, exact matches) and worst (`similarity` < 0, e.g. a
+line whose reading is almost entirely wrong syllables) cases look like genuine OCR/reading-quality
+differences, not alignment mistakes.
+
+Output: `data/lvt_ground_truth.json` (gitignored), same schema as Kiều's.
+
+**Not yet done:** using either ground truth to actually score Phase 3's `translation` field (as
 opposed to the `reading` field used for alignment) - the `translation` field is the LLM's fluent
 paraphrase, which for Nôm poetry often already reads close to the modern verse itself (not a
 cross-language translation in the usual sense), so a real scoring pass would need to decide what
-"correct" means for a paraphrase rather than an exact transcription. Also not done: the same
-alignment for Lục Vân Tiên (single edition, no cross-edition redundancy check) or sourcing/aligning
-DVSKTT's real 1993 published translation (a genuine Han→Việt translation, not a same-language
-spelling normalization, so a different and harder kind of ground truth).
+"correct" means for a paraphrase rather than an exact transcription. Also not done: root-causing
+Lục Vân Tiên's lower alignment confidence, or sourcing/aligning DVSKTT's real 1993 published
+translation (a genuine Han→Việt translation, not a same-language spelling normalization, so a
+different and harder kind of ground truth).
 
 ## Known simplifications (flagged, not silently assumed)
 
-- **Kiều alignment quality is reported, not guaranteed** - 4.6% of aligned lines score
-  similarity <0.4, meaning the DP was forced to pick *some* verse but likely picked the wrong
-  one (see "A real parallel corpus for Kiều" above). Any consumer of `kieu_ground_truth.json`
-  must filter on `similarity` rather than trusting every `verse_number` equally.
+- **Kiều/Lục Vân Tiên alignment quality is reported, not guaranteed** - 4.6% of Kiều's and 18.7%
+  of Lục Vân Tiên's aligned lines score similarity <0.4, meaning the DP was forced to pick *some*
+  verse but likely picked the wrong one (see "A real parallel corpus" above). Any consumer of
+  `kieu_ground_truth.json`/`lvt_ground_truth.json` must filter on `similarity` rather than
+  trusting every `verse_number` equally.
 - **Same-length restriction excludes 583 of 7,577 lines (7.7%)** where baseline/epoch8/
   corrected/ground-truth aren't all equal length - exactly the cases where a single insertion/
   deletion could misalign everything after it (Phase 2's own documented Character Accuracy

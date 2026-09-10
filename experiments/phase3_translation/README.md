@@ -146,22 +146,25 @@ with a bonus: the "low confidence" fallback added to the prompt is now the two-l
 (thinking disabled first, low-confidence flag second, one automatic retry third - see
 `translate_line`'s docstring) instead of relying on prompt wording alone.
 
-## Ground truth for Truyện Kiều: real alignment against Wikisource
+## Ground truth for Kiều and Lục Vân Tiên: real alignment against Wikisource
 
-Unlike DVSKTT (needs an actual Han→Việt translation) or Lục Vân Tiên (not yet done), Kiều's
-source text was already composed in Vietnamese - so a clean modern-spelling edition (Vietnamese
-Wikisource's complete, verse-numbered 3,254-line text, public domain) IS the ground truth, no
-translation step needed. `scripts/build_kieu_ground_truth.py` aligns each of NomNaOCR's three
-digitized editions (1866/1871/1872 - only a few hundred spot-digitized verses each, not the whole
-poem, so this is a real subsequence-alignment problem, not just "manifest order = verse order")
-against it, via a Levenshtein-scored DP over Stage 1's phonetic reading, made affordable with
+Unlike DVSKTT (needs an actual Han→Việt translation), both Kiều and Lục Vân Tiên's source text was
+already composed in Vietnamese - so a clean modern-spelling edition (Vietnamese Wikisource's
+complete, verse-numbered text for each, public domain) IS the ground truth, no translation step
+needed. `eval_lib/wikisource_alignment.py` aligns each digitized edition (Kiều: 1866/1871/1872,
+via `scripts/build_kieu_ground_truth.py`; Lục Vân Tiên: one edition, via
+`scripts/build_lvt_ground_truth.py`) - only a few hundred spot-digitized verses each, not the
+whole poem, so this is a real subsequence-alignment problem, not just "manifest order = verse
+order" - via a Levenshtein-scored DP over Stage 1's phonetic reading, made affordable with
 n-gram-seeded candidate generation instead of a naive full search (see `results.md` for two
-cheaper approaches that were tried and gave wrong answers before landing on this one). Result:
-1,823 lines aligned, 65.2% at similarity ≥0.7 - see `results.md` for the full breakdown,
-worked examples, and the honest failure case (a line with too little real content in its Stage-1
-reading for any text-matching method to recover). Output: `data/kieu_ground_truth.json`
-(gitignored). Not yet used to actually score the `translation` field, and not yet extended to Lục
-Vân Tiên or DVSKTT - see `results.md`'s "Not yet done."
+cheaper approaches that were tried and gave wrong answers before landing on this one, plus real
+Wikisource transcription quirks found and handled along the way - inconsistent verse markers,
+inline footnotes, editorial templates). Result: 1,823 Kiều lines aligned (65.2% at similarity
+≥0.7) and 407 Lục Vân Tiên lines (38.8% at similarity ≥0.7, lower confidence not yet root-caused)
+- see `results.md` for the full breakdown, worked examples, and honest failure cases. Output:
+`data/kieu_ground_truth.json` / `data/lvt_ground_truth.json` (gitignored). Not yet used to
+actually score the `translation` field, and DVSKTT still has no ground truth - see `results.md`'s
+"Not yet done."
 
 ## What's not built yet
 
@@ -173,11 +176,12 @@ Vân Tiên or DVSKTT - see `results.md`'s "Not yet done."
   dropped 66.0%→21.2% for **$0.33**. `data/translations_full.json` still reflects the *old*
   prompt, though - re-running the full poetry subset (~$4-5) or the whole 7,577-line corpus
   (~$14) to regenerate it with the fix hasn't been done yet (budget-paused, not abandoned).
-- **Scoring translations against the new Kiều ground truth** - alignment is done (above), but
-  actually scoring the `translation` field against it isn't, since the field is often already a
+- **Scoring translations against the new ground truth** - alignment is done (above), but actually
+  scoring the `translation` field against it isn't, since the field is often already a
   same-language paraphrase for poetry, not a cross-language translation in the usual sense - see
   `results.md`.
-- **A parallel corpus for Lục Vân Tiên and DVSKTT** - only Kiều has one so far.
+- **A parallel corpus for DVSKTT** - the only remaining source work without one.
+- **Root-causing Lục Vân Tiên's lower alignment confidence** relative to Kiều's.
 
 ## Running Stage 1
 

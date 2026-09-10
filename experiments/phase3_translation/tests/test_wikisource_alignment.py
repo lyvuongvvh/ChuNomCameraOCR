@@ -1,6 +1,7 @@
-"""Unit tests for eval_lib/kieu_ground_truth.py - no network, no real Anthropic API, no Docker/TF:
+"""Unit tests for eval_lib/wikisource_alignment.py - no network, no real Anthropic API, no
+Docker/TF:
 
-    python -m unittest tests.test_kieu_ground_truth -v
+    python -m unittest tests.test_wikisource_alignment -v
 """
 import pathlib
 import sys
@@ -8,7 +9,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from eval_lib.kieu_ground_truth import (  # noqa: E402
+from eval_lib.wikisource_alignment import (  # noqa: E402
     align_edition,
     candidate_verses,
     build_ngram_index,
@@ -55,6 +56,55 @@ class TestParseWikisourcePoem(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_wikisource_poem("no poem tags here")
 
+    def test_strips_inline_ref_footnotes(self):
+        """Luc Van Tien's Wikisource pages (unlike Kieu's) have inline <ref>...</ref> footnotes
+        attached to some verses - these are editorial annotations, not part of the poem, and
+        must not leak into the extracted verse text."""
+        wikitext = "<poem>\nTrước đèn xem truyện Tây minh<ref>Some footnote, with punctuation.</ref>,\nGẫm cười hai chữ nhơn tình éo le.\n</poem>"
+        verses = parse_wikisource_poem(wikitext)
+        self.assertEqual(verses[0][1], "Trước đèn xem truyện Tây minh,")
+        self.assertNotIn("footnote", verses[0][1])
+
+    def test_start_number_continues_across_parts(self):
+        """Luc Van Tien is split across 4 Wikisource sub-pages - concatenating per-page parse
+        results needs the second part to continue numbering from where the first left off."""
+        part_one = "<poem>\nline one,\nline two.\n{{số|5}}line five,\n</poem>"
+        part_two = "<poem>\nline four,\nline five.\n</poem>"
+        first = parse_wikisource_poem(part_one)
+        second = parse_wikisource_poem(part_two, start_number=first[-1][0] + 1)
+        self.assertEqual([v[0] for v in first + second], [1, 2, 3, 4, 5])
+
+    def test_ignores_unreliable_marker_value(self):
+        """Regression test: Luc Van Tien's real Wikisource text has genuine transcription
+        errors in its {{so|N}} markers - e.g. a real stretch reads ...20, 35, 30, 45, 40, 45,
+        50... where the surrounding strict every-5-lines pattern makes it obvious two adjacent
+        marker pairs got transposed. An earlier version of this parser trusted the marker's
+        digit as authoritative and reset its counter to it, producing verse numbers that jumped
+        BACKWARDS (39 then 30) - guaranteed to break the alignment DP's monotonicity assumption.
+        Pure sequential counting (ignoring the marker's value, only stripping its markup) is
+        immune to this since it only assumes lines were never reordered, not that every marker
+        digit was transcribed correctly."""
+        wikitext = "<poem>\nline one,\n{{số|35}}line two,\n{{số|30}}line three,\n</poem>"
+        verses = parse_wikisource_poem(wikitext)
+        self.assertEqual([v[0] for v in verses], [1, 2, 3])
+
+    def test_variant_reading_template_keeps_primary_form(self):
+        """A real Luc Van Tien line starts with {{khác|Mênh|Minh}} (a "variant reading" template
+        meaning the primary transcription is "Mênh", with "Minh" noted as an alternate) - this
+        must resolve to the primary form, not leak raw wikitext markup or silently drop the
+        word entirely (that word is the start of the verse)."""
+        wikitext = "<poem>\n{{khác|Mênh|Minh}} mông biển rộng đùng đùng sóng xao.\n</poem>"
+        verses = parse_wikisource_poem(wikitext)
+        self.assertEqual(verses[0][1], "Mênh mông biển rộng đùng đùng sóng xao.")
+
+    def test_drops_bare_editorial_template_lines(self):
+        """A real Luc Van Tien line is just "{{ba sao}}" (an editorial section-break marker,
+        literally "three stars") on its own - this must be dropped entirely, not ingested as a
+        real verse (which would silently shift every subsequent line's verse_number by one)."""
+        wikitext = "<poem>\nline one,\n{{ba sao}}\nline two,\n</poem>"
+        verses = parse_wikisource_poem(wikitext)
+        self.assertEqual([text for _, text in verses], ["line one,", "line two,"])
+
 
 class TestNormalize(unittest.TestCase):
     def test_strips_diacritics_and_case(self):
@@ -92,6 +142,18 @@ class TestParseImgSortKey(unittest.TestCase):
     def test_raises_on_unrecognized_name(self):
         with self.assertRaises(ValueError):
             parse_img_sort_key("not_a_page_name.jpg")
+
+    def test_luc_van_tien_naming_scheme(self):
+        """Luc Van Tien's filenames ("nlvnpf-0059-PPP_M.jpg") have no "page" substring at all and
+        no recto/verso letter - a completely different scheme from Kieu's, which this shared
+        regex must also handle without a work-specific parser."""
+        self.assertEqual(parse_img_sort_key("Luc Van Tien/nlvnpf-0059-004_9.jpg"), (4, "", 9))
+        self.assertEqual(parse_img_sort_key("Luc Van Tien/nlvnpf-0059-099_5.jpg"), (99, "", 5))
+
+    def test_luc_van_tien_sorts_numerically(self):
+        names = ["nlvnpf-0059-099_5.jpg", "nlvnpf-0059-004_9.jpg", "nlvnpf-0059-017_14.jpg"]
+        names.sort(key=parse_img_sort_key)
+        self.assertEqual(names, ["nlvnpf-0059-004_9.jpg", "nlvnpf-0059-017_14.jpg", "nlvnpf-0059-099_5.jpg"])
 
 
 class TestCandidateVerses(unittest.TestCase):
