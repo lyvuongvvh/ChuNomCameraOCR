@@ -338,12 +338,53 @@ page's own title ("bản Quốc ngữ 2082 câu").
 |---|---|---|---|
 | 158 (38.8%) | 173 (42.5%) | 76 (18.7%) | 0.593 |
 
-Markedly lower confidence than Kiều's 65.2%/0.739 average. Not root-caused further here (would
-need comparing Stage 1 dictionary coverage and OCR/reading quality specifically on Lục Vân Tiên's
-subset, not done) - flagged as an open question rather than assumed to be an alignment bug, since
-spot-checks of both the best (`similarity` 1.0, exact matches) and worst (`similarity` < 0, e.g. a
-line whose reading is almost entirely wrong syllables) cases look like genuine OCR/reading-quality
-differences, not alignment mistakes.
+Markedly lower confidence than Kiều's 65.2%/0.739 average.
+
+### Root cause: mostly upstream OCR quality, not the alignment method
+
+Checked, not assumed. Comparing Phase 2b's corrected predictions against the true manifest labels
+per work (Sequence Accuracy, CER, same metrics as Phase 2 - see
+[`experiments/phase2_nomnaocr_baseline/results.md`](../phase2_nomnaocr_baseline/results.md)):
+
+| Work | Sequence Accuracy | CER (micro) | Alignment similarity ≥0.7 |
+|---|---|---|---|
+| Kiều 1866 | 56.6% | 9.1% | 74.3% |
+| Kiều 1871 | 49.1% | 11.8% | 65.7% |
+| Kiều 1872 | 36.0% | 17.0% | 58.4% |
+| **Lục Vân Tiên** | **30.5%** | **17.1%** | **38.8%** |
+
+The ranking is identical across both independent OCR-accuracy metrics and alignment confidence -
+Lục Vân Tiên has the worst underlying recognition of the four editions, by the largest margin.
+Confirmed within Lục Vân Tiên's own data too, not just across editions: lines where Phase 2b's
+prediction exactly matches the true Han/Nôm label average **0.681** similarity (54.8%
+high-confidence), versus **0.554** (31.8%) for lines with any OCR error at all - a real, direct
+effect, not a cross-work artifact.
+
+**Why Stage 1's dictionary "coverage" stat didn't already show this**: coverage (95-97% across
+all four works, actually *best* for Lục Vân Tiên at 96.9%) only measures whether a character got
+*some* reading, not whether OCR recognized the *right* character. A misrecognized character still
+gets confidently looked up and produces a fluent-looking but wrong reading - coverage can't see
+that, so it looked like dictionary gaps weren't the problem when the real problem was one layer
+further upstream.
+
+**Likely reason recognition is worse for Lục Vân Tiên**: Kiều's three digitized editions combine
+to 7,063 training patches (`Patches/Train.txt`) all reinforcing the *same* underlying vocabulary,
+versus Lục Vân Tiên's single edition at only 1,646 - even though train/validation split ratios are
+similar (~80%) across all four works, Lục Vân Tiên's model exposure to its own specific vocabulary
+is roughly 4x thinner.
+
+**A residual gap OCR alone doesn't explain**: even Lục Vân Tiên lines with *perfect* OCR only
+reach 54.8% high-confidence, still below Kiều's 65.2% overall average (which includes its own
+OCR-error lines). Spot-checked one such case (`nlvnpf-0059-018_18.jpg`, edit distance 0 against
+the true label, reading "song thân nghe nói lòng bôi") - searched the full 2,082-verse Wikisource
+text for anything close and found nothing (`Song thân dạy bảo vừa xong,` at verse 331 is the
+closest by shared opening words, and it isn't close). Two plausible, unconfirmed explanations:
+genuine textual variance between NomNaOCR's specific print edition and Wikisource's chosen edition
+(Lục Vân Tiên has a less standardized transmission history than Kiều's near-canonical text), or
+Stage 1's already-documented "first reading only" limitation (see README's "Known
+simplifications") landing harder on Lục Vân Tiên-specific vocabulary if the underlying
+dictionaries (BTCN, Digitizing Vietnam) were curated with more Kiều examples. Flagged as a
+plausible factor, not independently verified further.
 
 Output: `data/lvt_ground_truth.json` (gitignored), same schema as Kiều's.
 
@@ -351,10 +392,10 @@ Output: `data/lvt_ground_truth.json` (gitignored), same schema as Kiều's.
 opposed to the `reading` field used for alignment) - the `translation` field is the LLM's fluent
 paraphrase, which for Nôm poetry often already reads close to the modern verse itself (not a
 cross-language translation in the usual sense), so a real scoring pass would need to decide what
-"correct" means for a paraphrase rather than an exact transcription. Also not done: root-causing
-Lục Vân Tiên's lower alignment confidence, or sourcing/aligning DVSKTT's real 1993 published
-translation (a genuine Han→Việt translation, not a same-language spelling normalization, so a
-different and harder kind of ground truth).
+"correct" means for a paraphrase rather than an exact transcription. Also not done: confirming
+which of the two residual-gap hypotheses above actually applies, or sourcing/aligning DVSKTT's
+real 1993 published translation (a genuine Han→Việt translation, not a same-language spelling
+normalization, so a different and harder kind of ground truth).
 
 ## Known simplifications (flagged, not silently assumed)
 

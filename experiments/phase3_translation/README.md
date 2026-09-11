@@ -160,11 +160,13 @@ n-gram-seeded candidate generation instead of a naive full search (see `results.
 cheaper approaches that were tried and gave wrong answers before landing on this one, plus real
 Wikisource transcription quirks found and handled along the way - inconsistent verse markers,
 inline footnotes, editorial templates). Result: 1,823 Kiều lines aligned (65.2% at similarity
-≥0.7) and 407 Lục Vân Tiên lines (38.8% at similarity ≥0.7, lower confidence not yet root-caused)
-- see `results.md` for the full breakdown, worked examples, and honest failure cases. Output:
-`data/kieu_ground_truth.json` / `data/lvt_ground_truth.json` (gitignored). Not yet used to
-actually score the `translation` field, and DVSKTT still has no ground truth - see `results.md`'s
-"Not yet done."
+≥0.7) and 407 Lục Vân Tiên lines (38.8%). **Lục Vân Tiên's lower confidence is root-caused**: its
+Phase 2b OCR is genuinely the worst of the four editions by both Sequence Accuracy and CER,
+plausibly because its single edition has ~4x less training data reinforcing its vocabulary than
+Kiều's three editions combined - see `results.md` for the full breakdown, worked examples, and
+honest failure cases. Output: `data/kieu_ground_truth.json` / `data/lvt_ground_truth.json`
+(gitignored). Not yet used to actually score the `translation` field, and DVSKTT still has no
+ground truth - see `results.md`'s "Not yet done."
 
 ## What's not built yet
 
@@ -181,7 +183,9 @@ actually score the `translation` field, and DVSKTT still has no ground truth - s
   same-language paraphrase for poetry, not a cross-language translation in the usual sense - see
   `results.md`.
 - **A parallel corpus for DVSKTT** - the only remaining source work without one.
-- **Root-causing Lục Vân Tiên's lower alignment confidence** relative to Kiều's.
+- **Confirming the residual gap in Lục Vân Tiên's alignment confidence** - even its perfect-OCR
+  lines underperform Kiều's overall average; plausibly genuine textual variance between
+  NomNaOCR's edition and Wikisource's, not independently confirmed - see `results.md`.
 
 ## Running Stage 1
 
