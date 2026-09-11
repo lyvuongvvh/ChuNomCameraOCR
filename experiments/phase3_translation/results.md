@@ -207,6 +207,11 @@ subset (~2,230 lines) with the fixed prompt would cost roughly $4-5 more; the fu
 corpus, roughly $14 again. Neither has been run - this section documents the fix and its
 validation, not a corrected corpus.
 
+**This validation only measured the low-confidence rate - a later pass found the same fix also
+measurably improves real translation accuracy** on lines that weren't even flagged low-confidence
+in the first place (mean `edit_similarity` against real ground truth 0.383→0.666 on 9 lines
+checked for free from this same sample) - see "Root-causing low-scoring lines" below.
+
 **Cross-edition consistency check (Kiều-specific, needs no ground truth):** found 60 lines where
 the post-corrected Han-Nôm text is byte-identical across 2-3 of the poem's 3 digitized editions
 (1866/1871/1872) - a real check Kiều's multi-edition structure uniquely allows. Sampled 3: two
@@ -539,10 +544,82 @@ worth naming rather than reading as "short lines translate worse."
 Output: `data/translation_scores.json` (gitignored), with per-line scores plus the translation
 and reference text used, for further inspection.
 
-**Not yet done:** any deeper investigation of *why* specific low-scoring lines are wrong (OCR
-error vs. Stage 1 dictionary gap vs. genuine Stage 2 translation mistake vs. metric harshness on
-a valid paraphrase) - this scoring pass identifies *which* lines are likely wrong, not *why*, for
-all but the handful manually spot-checked above.
+## Root-causing low-scoring lines: OCR, dictionary gaps, paraphrase, or something else
+
+`scripts/diagnose_low_scores.py` classifies every line in the bottom quartile (by each work's
+primary metric) into one of four causes, using evidence already on hand (no new API calls):
+**OCR error** (Phase 2b's predicted text doesn't match the true manifest label - everything
+downstream was built on a wrong character), **dictionary gap** (prediction is correct, but Stage
+1 left one or more characters unresolved), **likely valid paraphrase** (Kiều/Lục Vân Tiên only -
+`word_jaccard` ≥0.4 despite low `edit_similarity`, the signature of correct content in different
+words/order), or **unexplained** (none of the above - OCR right, dictionary resolved, words don't
+overlap much either - candidate genuine Stage 2 mistakes, flagged for manual review, not
+auto-diagnosed further).
+
+| Work | n (bottom quartile) | OCR error | Dictionary gap | Likely valid paraphrase | Unexplained |
+|---|---|---|---|---|---|
+| Kiều | 298 | 41.9% | 18.1% | 5.4% | 34.6% |
+| Lục Vân Tiên | 40 | 57.5% | 10.0% | 2.5% | 30.0% |
+| DVSKTT | 1,259 | 81.3% | 3.3% | n/a | 15.5% |
+
+DVSKTT's overwhelming OCR-error share (81.3%) makes sense structurally: prose sentences are
+longer and more syntactically dependent than a 6/8-syllable verse line, so a single wrong
+character has more surface area to derail. **This also means most of DVSKTT's low `word_recall`
+scores are explained by upstream OCR, not a translation or ground-truth problem** - a useful,
+concrete answer, not a shrug.
+
+### The "unexplained" bucket: mostly the SAME known prompt bug, seen at a different layer
+
+Manually inspecting the "unexplained" Kiều/Lục Vân Tiên lines (where OCR was right and Stage 1
+resolved every character) revealed a clear, consistent, recognizable pattern: the LLM translating
+a Nôm character by its **literal Sino-Vietnamese/Chinese dictionary meaning** instead of trusting
+Stage 1's already-correct **phonetic** reading. Concrete case: Stage 1's reading for one line was
+"khiến người trên tịch cõng tản nát lòng" - nearly perfect phonetically against the true verse
+"Khiến người trên tiệc cũng tan nát lòng." - but the shipped `translation` says "Sai người trên
+chiếu ôm ấp mà lòng tan nát," reading 遣/席/拱 by their literal Chinese senses ("gửi/sai" instead of
+trusting "khiến"; "chiếu" [mat] instead of "tiệc" [feast]; "ôm ấp" [embrace] instead of "cũng"
+[also]) rather than the phonetic gloss sitting right next to it in the prompt.
+
+This is not a new bug - it's the **same root cause already found and fixed** for poetry's inflated
+low-confidence rate (see "Follow-up investigation" above): the OLD system prompt (still used for
+`translations_full.json`) doesn't explicitly tell the model that Nôm poetry's characters are
+picked for sound, not sense. There, it caused false low-confidence flags. Here, on lines that
+happened not to get flagged, it caused real accuracy loss instead - two different symptoms of one
+underlying gap in the old prompt.
+
+**Confirmed, not just theorized - using data already paid for, no new API spend.** The earlier
+$0.33 prompt-fix validation ran the FIXED prompt over 156 real lines; 9 of those happen to be in
+this session's "unexplained" bucket, giving 9 free, real head-to-head comparisons:
+
+| img_name | Metric | Old prompt | Fixed prompt |
+|---|---|---|---|
+| `Tale of Kieu 1866/page015a_18.jpg` | edit_similarity | 0.400 | 0.737 |
+| `Tale of Kieu 1866/page039b_5.jpg` | edit_similarity | 0.424 | 0.824 |
+| `Tale of Kieu 1871/page090_23.jpg` | edit_similarity | 0.333 | 0.852 |
+| `Tale of Kieu 1872/page42a_2.jpg` | edit_similarity | 0.351 | 0.789 |
+| `Luc Van Tien/nlvnpf-0059-004_9.jpg` | edit_similarity | 0.379 | **1.000** |
+| (4 more, smaller or slightly negative deltas) | | | |
+| **Mean across all 9** | edit_similarity | **0.383** | **0.666** |
+| **Mean across all 9** | word_jaccard | **0.215** | **0.518** |
+
+`Luc Van Tien/nlvnpf-0059-004_9.jpg`'s fixed-prompt translation ("Chi bằng hỏi lại lẽ nào cho
+minh") is a **word-for-word exact match** to the real Wikisource verse. 7 of 9 improve on
+`edit_similarity`, 8 of 9 on `word_jaccard`; the 2 slight regressions are modest, not reversals.
+
+**This raises the stakes on the still-paused full re-run** (see "Fix, validated against the real
+API" above): it was already known to fix false low-confidence flagging; it's now shown, on a real
+if small sample, to also measurably improve translation accuracy on exactly the class of lines
+this diagnosis flagged as "unexplained" - likely accounting for a meaningful share of that 30-35%
+Kiều/Lục Vân Tiên bucket, though only 9 of ~115 such lines have been directly checked this way.
+Re-running the full corpus (~$14, still not spent) would let this be checked at scale instead of
+extrapolated from 9 lines.
+
+Output: `data/low_score_diagnosis.json` (gitignored).
+
+**Not yet done:** classifying the remaining ~106 "unexplained" lines beyond the 9 with a free
+before/after comparison - the pattern found here is consistent enough to be a strong hypothesis
+for the bucket as a whole, but calling it *confirmed* for all of them would overstate 9 data
+points into more than they support.
 
 ## Known simplifications (flagged, not silently assumed)
 
@@ -566,6 +643,12 @@ all but the handful manually spot-checked above.
   Vân Tiên's `translation` field is a fluency pass, not a word-for-word transcription, so a
   synonym or reordered clause can score badly despite being a correct translation (see "Scoring"
   above for a concrete example). Low scores flag lines worth a human look, not confirmed errors.
+- **"Unexplained" (diagnose_low_scores.py) means "not explained by the three checked causes,"
+  not "confirmed genuine Stage 2 error"** - it's a residual bucket after ruling out OCR error,
+  dictionary gaps, and (for verse) the word-jaccard paraphrase signature, not an independent
+  positive diagnosis. The 9-line free comparison above supports one specific hypothesis (old-vs-
+  new prompt, literal-vs-phonetic reading) for a meaningful share of it, but that's 9 data points,
+  not a full audit of the ~115 total unexplained lines.
 - **Same-length restriction excludes 583 of 7,577 lines (7.7%)** where baseline/epoch8/
   corrected/ground-truth aren't all equal length - exactly the cases where a single insertion/
   deletion could misalign everything after it (Phase 2's own documented Character Accuracy

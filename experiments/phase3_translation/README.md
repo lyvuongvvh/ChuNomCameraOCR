@@ -193,6 +193,20 @@ good paraphrase badly (verse translation is a fluency pass, not a transcription)
 `word_recall` is noisy on very short lines (a single missing word swings the score by 0.5+) -
 confirmed with real numbers (0.559 avg for ≤2-content-word lines vs. 0.708 for ≥6).
 
+## Root-causing low-scoring lines
+
+`scripts/diagnose_low_scores.py` classifies each bottom-quartile-scoring line into OCR error,
+Stage 1 dictionary gap, likely valid paraphrase (verse only), or unexplained. DVSKTT's low scores
+are mostly (81.3%) explained by upstream OCR error alone. The "unexplained" bucket (~30-35% of
+Kiều/Lục Vân Tiên's low scorers) turned out to mostly be **the same root cause already found for
+poetry's low-confidence rate**, just showing up as a real accuracy problem instead of a false
+flag: the old prompt translates a Nôm character by its literal Chinese meaning instead of
+trusting Stage 1's already-correct phonetic reading. Confirmed for free using the earlier
+prompt-fix validation sample (no new API spend): 9 lines that overlap both datasets show the
+fixed prompt nearly doubling `word_jaccard` (0.215→0.518) and substantially improving
+`edit_similarity` (0.383→0.666) - one hits a word-for-word exact match. This raises the case for
+the still-paused full re-run (above) beyond just fixing the confidence flag - see `results.md`.
+
 ## What's not built yet
 
 - **Re-running the shipped corpus with the fixed prompt.** Poetry's inflated low-confidence rate
@@ -200,12 +214,13 @@ confirmed with real numbers (0.559 avg for ≤2-content-word lines vs. 0.708 for
   Chinese, which doesn't fit Kiều/Lục Vân Tiên's vernacular-Vietnamese verse. The fix (explaining
   Nôm verse's grammar in the prompt, tightening the trigger) is applied in
   `translate_lib/llm_translate.py` and validated on a 156-line poetry sample - low-confidence rate
-  dropped 66.0%→21.2% for **$0.33**. `data/translations_full.json` still reflects the *old*
-  prompt, though - re-running the full poetry subset (~$4-5) or the whole 7,577-line corpus
-  (~$14) to regenerate it with the fix hasn't been done yet (budget-paused, not abandoned).
-- **Investigating *why* specific low-scoring lines are wrong** - scoring (above) identifies which
-  lines are likely wrong, not why (OCR error vs. dictionary gap vs. genuine Stage 2 mistake vs.
-  metric harshness on a valid paraphrase) - only spot-checked for a handful of examples so far.
+  dropped 66.0%→21.2% for **$0.33**, and (found later, at no extra cost - see "Root-causing
+  low-scoring lines" above) the same fix also measurably improves real translation *accuracy*,
+  not just the confidence flag. `data/translations_full.json` still reflects the *old* prompt,
+  though - re-running the full poetry subset (~$4-5) or the whole 7,577-line corpus (~$14) to
+  regenerate it with the fix hasn't been done yet (budget-paused, not abandoned).
+- **Confirming the "unexplained" low-score hypothesis at scale** - only 9 of ~115 such lines have
+  a free before/after prompt comparison; the pattern is consistent but not a full audit.
 
 ## Running Stage 1
 
