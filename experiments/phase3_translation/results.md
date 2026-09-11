@@ -682,6 +682,32 @@ same convention as the first validation's sample output).
 case for the still-paused full corpus re-run (~$14, ~47 min) - it's confirmed, not just expected,
 to improve real translation accuracy across both failure classes found in this investigation.
 
+### DVSKTT's "unexplained" bucket: checked separately - a different, already-documented cause
+
+The two prompt fixes above were designed around Kiều/Lục Vân Tiên's *poetry* failure modes and
+worded accordingly ("Nôm poetry lines often mention recurring characters..."), so they're scoped
+to NOT apply to DVSKTT's prose. Before committing to that scoping, checked whether DVSKTT's own
+195-line "unexplained" bucket shows the same proper-noun/fabrication pattern and would need the
+same widening - it does not, on real evidence, not assumption:
+
+- **77.4% (151 of 195) of these lines have a Han source of 4 characters or fewer.** Sampling both
+  the shortest and the "longer" (≥3 Vietnamese content words) subsets found the same thing every
+  time: terse annalistic-chronicle fragments - year headers (`十四年` → "Năm thứ mười bốn",
+  correct), reign-title references (`明洪武` → "Niên hiệu Minh Hồng Vũ", correct), even a single
+  bare grammatical particle (`之` → a correct explanation that it's a meaningless particle in
+  isolation) - all legitimately well-translated, just scored against a leaf-level reference where
+  the exact matching phrasing (e.g. Vietnamese spelled-out numbers vs. the leaf's Arabic numerals
+  for a year) may differ or sit elsewhere in a much longer passage.
+- This is the SAME leaf-level-granularity limitation already documented (see "Known
+  simplifications" below), not a new translation-quality problem, and not a case the poetry-only
+  prompt wording is leaving unaddressed. DVSKTT's own name/title handling already looks correct
+  even under the *old* prompt (e.g. `Sử thần Ngô Sĩ Liên nói:` - a historian's name - was already
+  preserved correctly in an earlier spot-check), consistent with genuine Literary-Chinese-meaning
+  translation not suffering the same phonetic-vs-literal confusion poetry does.
+
+No further prompt work is proposed for DVSKTT here - its low scores are explained by the metric's
+existing, documented limitations, not by anything the two poetry-focused fixes above would touch.
+
 Output: `data/low_score_diagnosis.json` (gitignored).
 
 **Not yet done:** the actual full-corpus re-run itself (validated as worthwhile, not yet executed

@@ -215,7 +215,11 @@ real API** (156-line sample, $0.4176): mean `edit_similarity` against real groun
 `word_jaccard` 0.446→0.581, and the one known proper-noun case that landed in this sample confirmed
 directly ("Ông" → "Hầu công", matching the real "Hồ công"). This is a stronger check than the
 earlier free proxy - 99 real ground-truth-scorable lines from a fresh run, not an extrapolation.
-Both fixes are now confirmed, not just theorized, to improve real translation accuracy - see
+Both fixes are now confirmed, not just theorized, to improve real translation accuracy. Checked
+(not assumed) whether DVSKTT's own "unexplained" bucket needed the same fixes, since they're
+worded poetry-only - it doesn't: 77.4% of it is terse year/reign-title/particle fragments
+(≤4 Han characters) that are already translated correctly, just scored against a leaf-level
+reference with different phrasing - the known granularity limitation, not a translation bug. See
 `results.md`.
 
 ## What's not built yet
