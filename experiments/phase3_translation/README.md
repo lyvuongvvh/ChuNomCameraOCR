@@ -204,8 +204,15 @@ flag: the old prompt translates a Nôm character by its literal Chinese meaning 
 trusting Stage 1's already-correct phonetic reading. Confirmed for free using the earlier
 prompt-fix validation sample (no new API spend): 9 lines that overlap both datasets show the
 fixed prompt nearly doubling `word_jaccard` (0.215→0.518) and substantially improving
-`edit_similarity` (0.383→0.666) - one hits a word-for-word exact match. This raises the case for
-the still-paused full re-run (above) beyond just fixing the confidence flag - see `results.md`.
+`edit_similarity` (0.383→0.666) - one hits a word-for-word exact match. **Confirmed at the full
+115-line bucket scale, still no new API spend**, via a cheap proxy: `word_jaccard` between each
+line's OLD translation and its own Stage 1 reading ("reading-fidelity") - 65.2% score below 0.3,
+and the 9 confirmed lines average right in line with the whole bucket (0.243 vs 0.236), so they're
+representative, not a lucky sample. The remaining ~35% turned out to be a **different, separate
+problem**: proper names/titles getting genericized (e.g. "Hồ công" → "Ông") and at least one
+apparent outright fabrication - not fixed by the existing prompt change, no fix attempted yet.
+This raises the case for the still-paused full re-run (above) for the ~65% it should help, while
+flagging the other ~35% needs separate future work - see `results.md`.
 
 ## What's not built yet
 
@@ -219,8 +226,10 @@ the still-paused full re-run (above) beyond just fixing the confidence flag - se
   not just the confidence flag. `data/translations_full.json` still reflects the *old* prompt,
   though - re-running the full poetry subset (~$4-5) or the whole 7,577-line corpus (~$14) to
   regenerate it with the fix hasn't been done yet (budget-paused, not abandoned).
-- **Confirming the "unexplained" low-score hypothesis at scale** - only 9 of ~115 such lines have
-  a free before/after prompt comparison; the pattern is consistent but not a full audit.
+- **A real-API-validated fix for the proper-noun/hallucination pattern** found in the ~35% of the
+  "unexplained" bucket the prompt fix above doesn't cover - only diagnosed so far, no fix
+  attempted or tested (candidates: more context than a single isolated line, or explicit
+  instructions to preserve proper nouns) - see `results.md`.
 
 ## Running Stage 1
 

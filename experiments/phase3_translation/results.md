@@ -606,20 +606,58 @@ this session's "unexplained" bucket, giving 9 free, real head-to-head comparison
 minh") is a **word-for-word exact match** to the real Wikisource verse. 7 of 9 improve on
 `edit_similarity`, 8 of 9 on `word_jaccard`; the 2 slight regressions are modest, not reversals.
 
+### Confirmed at full bucket scale (115 lines, not just 9) via a free proxy - still no new API spend
+
+9 lines is a real but small sample. A cheap proxy extends the check to the whole "unexplained"
+bucket without a single new API call: **reading-fidelity** - `word_jaccard` between the OLD
+(shipped) `translation` and that same line's own Stage 1 `reading`. A genuinely faithful
+translation of a phonetic reading should still share most of its content words with that reading
+(reassembling the same syllables into grammatical Vietnamese, not swapping them for different
+ones); a translation that abandoned the reading for literal character-by-character meaning
+shouldn't.
+
+- Mean reading-fidelity across all 115 unexplained lines: **0.236** (median 0.222).
+- The 9 lines confirmed above average **0.243** - statistically indistinguishable from the whole
+  bucket, meaning they're representative, not a lucky subset picked by coincidence.
+- **75 of 115 (65.2%) score below 0.3** - a low-fidelity majority, consistent with the same
+  literal-vs-phonetic root cause explaining most of this bucket, not just the 9 directly checked.
+
+### The remaining ~35% (40 lines, fidelity ≥0.3): a DIFFERENT, still-unfixed problem
+
+These lines' translations DO track their own reading reasonably closely, yet still score low
+against real ground truth - so the literal-vs-phonetic bug isn't the explanation here. Manually
+inspecting a sample surfaced a different, recognizable pattern the current prompt fix does **not**
+address: **proper names and titles getting genericized or dropped**, plus at least one apparent
+outright fabrication:
+
+- `hầu công nghe nói thương tình` (reading, matching the real "Hồ công nghe nói thương tình,") →
+  `translation` "**Ông** nghe nói vậy mà lòng thương xót." - "Hồ công," a character's title, gets
+  flattened to the generic pronoun "Ông" (sir/he).
+- `một lời cậy buổi chung công` (reading, matching "Một lời cậy với **Chung công**,") →
+  `translation` "Một lời gửi gắm, xin cậy nhau đến lúc **chung cùng công việc**." - "Chung Công"
+  (a person's name) gets reinterpreted as the common phrase "chung công" (shared work), with
+  extra invented wording padded around it.
+- `nhân khi bàn bạc gần xa` (reading, matching "Nhân khi bàn bạc gần xa," almost exactly) →
+  `translation` "Nhân đó **lừa gạt lọc lừa**, gần xa đều mắc lừa." - "bàn bạc" (discuss/negotiate)
+  becomes "lừa gạt" (deceive/cheat), content with no visible connection to the reading at all -
+  the starkest case, looking like a genuine fabrication rather than a word-sense slip.
+
+This is a real, distinct failure mode - not covered by the Nôm-verse-grammar prompt fix already
+validated above, and not yet addressed by any change to `translate_lib/llm_translate.py`. Likely
+candidates worth testing in a future pass (not attempted here, since testing a prompt change needs
+real API calls): giving the model more context than a single isolated line (character names
+recur across a poem, but each line is translated independently right now), or explicitly
+instructing it to preserve proper nouns/titles rather than translate them as common words.
+
 **This raises the stakes on the still-paused full re-run** (see "Fix, validated against the real
-API" above): it was already known to fix false low-confidence flagging; it's now shown, on a real
-if small sample, to also measurably improve translation accuracy on exactly the class of lines
-this diagnosis flagged as "unexplained" - likely accounting for a meaningful share of that 30-35%
-Kiều/Lục Vân Tiên bucket, though only 9 of ~115 such lines have been directly checked this way.
-Re-running the full corpus (~$14, still not spent) would let this be checked at scale instead of
-extrapolated from 9 lines.
+API" above) for the ~65% of the bucket it should help, while flagging that the remaining ~35%
+would NOT be fixed by that re-run alone - a different problem needing separate future work.
 
 Output: `data/low_score_diagnosis.json` (gitignored).
 
-**Not yet done:** classifying the remaining ~106 "unexplained" lines beyond the 9 with a free
-before/after comparison - the pattern found here is consistent enough to be a strong hypothesis
-for the bucket as a whole, but calling it *confirmed* for all of them would overstate 9 data
-points into more than they support.
+**Not yet done:** a real-API-validated fix for the proper-noun/hallucination pattern found above
+(only diagnosed here, no fix attempted or tested); classifying the ~40 lines in that bucket beyond
+the handful manually inspected.
 
 ## Known simplifications (flagged, not silently assumed)
 
@@ -646,9 +684,11 @@ points into more than they support.
 - **"Unexplained" (diagnose_low_scores.py) means "not explained by the three checked causes,"
   not "confirmed genuine Stage 2 error"** - it's a residual bucket after ruling out OCR error,
   dictionary gaps, and (for verse) the word-jaccard paraphrase signature, not an independent
-  positive diagnosis. The 9-line free comparison above supports one specific hypothesis (old-vs-
-  new prompt, literal-vs-phonetic reading) for a meaningful share of it, but that's 9 data points,
-  not a full audit of the ~115 total unexplained lines.
+  positive diagnosis. The reading-fidelity proxy (see "Root-causing low-scoring lines" above)
+  gives real, full-bucket evidence for ~65% of it (old prompt ignoring the phonetic reading), but
+  the reading-fidelity threshold (<0.3) is itself a heuristic cutoff, not a certainty per line -
+  and the remaining ~35% (a proper-noun/hallucination pattern) is only qualitatively characterized
+  from a handful of manually inspected examples, not a full audit.
 - **Same-length restriction excludes 583 of 7,577 lines (7.7%)** where baseline/epoch8/
   corrected/ground-truth aren't all equal length - exactly the cases where a single insertion/
   deletion could misalign everything after it (Phase 2's own documented Character Accuracy
