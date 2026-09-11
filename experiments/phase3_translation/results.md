@@ -375,16 +375,35 @@ is roughly 4x thinner.
 
 **A residual gap OCR alone doesn't explain**: even Lục Vân Tiên lines with *perfect* OCR only
 reach 54.8% high-confidence, still below Kiều's 65.2% overall average (which includes its own
-OCR-error lines). Spot-checked one such case (`nlvnpf-0059-018_18.jpg`, edit distance 0 against
-the true label, reading "song thân nghe nói lòng bôi") - searched the full 2,082-verse Wikisource
-text for anything close and found nothing (`Song thân dạy bảo vừa xong,` at verse 331 is the
-closest by shared opening words, and it isn't close). Two plausible, unconfirmed explanations:
-genuine textual variance between NomNaOCR's specific print edition and Wikisource's chosen edition
-(Lục Vân Tiên has a less standardized transmission history than Kiều's near-canonical text), or
-Stage 1's already-documented "first reading only" limitation (see README's "Known
-simplifications") landing harder on Lục Vân Tiên-specific vocabulary if the underlying
-dictionaries (BTCN, Digitizing Vietnam) were curated with more Kiều examples. Flagged as a
-plausible factor, not independently verified further.
+OCR-error lines). Two competing hypotheses were floated: genuine textual variance between
+NomNaOCR's specific print edition and Wikisource's chosen edition, or Stage 1's already-documented
+"first reading only" limitation (see README's "Known simplifications") landing harder on Lục Vân
+Tiên-specific vocabulary if the underlying dictionaries were curated with more Kiều examples.
+
+**Confirmed: genuine textual variance, not a dictionary-choice artifact.** Tested directly rather
+than left as a guess: took every perfect-OCR, low-similarity (<0.5) Lục Vân Tiên line (12 total)
+and checked each syllable position against that character's *full* candidate reading list in
+`reading_dict.json`, not just the first pick apply_reading_dict actually uses. If the dictionary
+disambiguation hypothesis were right, at least some of these should be fixable by picking a
+different available reading. **None were: 0 of 12.** Every single line has at least one syllable
+where the true Wikisource word doesn't appear among *any* of that character's known readings at
+all - ruling out "wrong reading picked" as the cause outright, since there was no *right* reading
+available to pick.
+
+Manually inspecting several of the 12 supports genuine edition variance specifically (not just
+"the dictionary lacks this word" in the abstract, and not a misaligned/wrong verse either) - they
+share partial lexical anchors with their aligned verse, consistent with the same narrative content
+worded differently by two different print traditions, not an unrelated verse:
+- `畧䀡尋世爫頭` → reading "lược xem tầm thế trảo đầu" vs. Wikisource "Trước xem Y học làm đầu," -
+  shares "xem" and the "...làm đầu"/"...trảo đầu" ending structure.
+- `㛪芒劄册畧吝𦋦京` → reading "em mang chép sách lược lận ra kinh" vs. Wikisource "Tôi thời mang
+  gói sau lần ra kinh." - shares both "mang" and the "ra kinh" ending verbatim.
+
+This is consistent with Lục Vân Tiên's comparatively less standardized transmission history
+(Kiều's is closer to a single canonical text across mainstream editions; Lục Vân Tiên's varies more
+between print runs) - not something a bigger or better-disambiguated dictionary could fix, since
+the words genuinely differ between what NomNaOCR's specific edition wrote and what Wikisource's
+specific edition wrote at the corresponding narrative moment.
 
 Output: `data/lvt_ground_truth.json` (gitignored), same schema as Kiều's.
 
@@ -392,10 +411,9 @@ Output: `data/lvt_ground_truth.json` (gitignored), same schema as Kiều's.
 opposed to the `reading` field used for alignment) - the `translation` field is the LLM's fluent
 paraphrase, which for Nôm poetry often already reads close to the modern verse itself (not a
 cross-language translation in the usual sense), so a real scoring pass would need to decide what
-"correct" means for a paraphrase rather than an exact transcription. Also not done: confirming
-which of the two residual-gap hypotheses above actually applies, or sourcing/aligning DVSKTT's
-real 1993 published translation (a genuine Han→Việt translation, not a same-language spelling
-normalization, so a different and harder kind of ground truth).
+"correct" means for a paraphrase rather than an exact transcription. Also not done:
+sourcing/aligning DVSKTT's real 1993 published translation (a genuine Han→Việt translation, not a
+same-language spelling normalization, so a different and harder kind of ground truth).
 
 ## Known simplifications (flagged, not silently assumed)
 
