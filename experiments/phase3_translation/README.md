@@ -210,28 +210,23 @@ line's OLD translation and its own Stage 1 reading ("reading-fidelity") - 65.2% 
 and the 9 confirmed lines average right in line with the whole bucket (0.243 vs 0.236), so they're
 representative, not a lucky sample. The remaining ~35% turned out to be a **different, separate
 problem**: proper names/titles getting genericized (e.g. "Hồ công" → "Ông") and at least one
-apparent outright fabrication - not fixed by the existing prompt change, no fix attempted yet.
-This raises the case for the still-paused full re-run (above) for the ~65% it should help, while
-flagging the other ~35% needs separate future work - see `results.md`.
+apparent outright fabrication. **Both fixes were then combined and validated together against the
+real API** (156-line sample, $0.4176): mean `edit_similarity` against real ground truth 0.610→0.773,
+`word_jaccard` 0.446→0.581, and the one known proper-noun case that landed in this sample confirmed
+directly ("Ông" → "Hầu công", matching the real "Hồ công"). This is a stronger check than the
+earlier free proxy - 99 real ground-truth-scorable lines from a fresh run, not an extrapolation.
+Both fixes are now confirmed, not just theorized, to improve real translation accuracy - see
+`results.md`.
 
 ## What's not built yet
 
-- **Re-running the shipped corpus with the fixed prompt.** Poetry's inflated low-confidence rate
-  was root-caused (`results.md`) to the system prompt's trigger being calibrated for Classical
-  Chinese, which doesn't fit Kiều/Lục Vân Tiên's vernacular-Vietnamese verse. The fix (explaining
-  Nôm verse's grammar in the prompt, tightening the trigger) is applied in
-  `translate_lib/llm_translate.py` and validated on a 156-line poetry sample - low-confidence rate
-  dropped 66.0%→21.2% for **$0.33**, and (found later, at no extra cost - see "Root-causing
-  low-scoring lines" above) the same fix also measurably improves real translation *accuracy*,
-  not just the confidence flag. `data/translations_full.json` still reflects the *old* prompt,
-  though - re-running the full poetry subset (~$4-5) or the whole 7,577-line corpus (~$14) to
-  regenerate it with the fix hasn't been done yet (budget-paused, not abandoned).
-- **Validating the proper-noun/anti-fabrication prompt addition against the real API.** A draft
-  fix is in `translate_lib/llm_translate.py`'s `SYSTEM_PROMPT` for the ~35% of the "unexplained"
-  bucket the already-validated fix doesn't cover (proper names/titles getting genericized, plus
-  one apparent fabrication) - guarded only by a wording-presence unit test so far, not yet tested
-  against the real API. Should get the same cheap-sample validation the first fix got before being
-  trusted or rolled into the full corpus re-run - see `results.md`.
+- **The full corpus re-run itself.** Both prompt fixes are validated (above) - Nôm verse grammar
+  ($0.33, first pass) and proper-noun/anti-fabrication (combined validation, $0.4176) - but
+  `data/translations_full.json` still reflects the *original* old prompt. Re-running the full
+  poetry subset (~$4-5) or the whole 7,577-line corpus (~$14, ~47 min) to regenerate it hasn't
+  been done yet (deliberately deferred, not forgotten).
+- **Classifying the ~40 proper-noun/fabrication-bucket lines** beyond the handful manually
+  inspected and the one directly re-validated above.
 
 ## Running Stage 1
 

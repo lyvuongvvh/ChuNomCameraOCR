@@ -84,8 +84,11 @@ class TestTranslateLine(unittest.TestCase):
         (results.md, "Root-causing low-scoring lines") found a distinct failure pattern the
         Nom-verse-grammar fix above doesn't cover - proper names/titles getting genericized
         (e.g. "Ho cong" -> "Ong") and at least one apparent outright fabrication unrelated to the
-        actual reading. This addition is a proposed fix, NOT YET VALIDATED against the real API -
-        this test only guards the wording stays in the prompt, it doesn't confirm the fix works."""
+        actual reading. Validated against the real API combined with the first fix (156-line
+        sample, $0.4176): mean edit_similarity against real ground truth 0.610->0.773, word_jaccard
+        0.446->0.581, and the one known proper-noun case in that sample ("Ong" -> "Hau cong",
+        matching the real "Ho cong") confirmed directly. This test only guards the wording stays
+        in the prompt going forward - the validation itself isn't re-run automatically."""
         self.assertIn("preserve it as a name", SYSTEM_PROMPT)
         self.assertIn("do not substitute content from a different line", SYSTEM_PROMPT)
 

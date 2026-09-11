@@ -651,28 +651,42 @@ pattern) - worth noting it is *not* the model substituting the real canonical po
 data in place of the OCR'd line, since that would have scored *better* against ground truth, not
 worse.
 
-**A draft fix for the proper-noun half is now in `translate_lib/llm_translate.py`'s
-`SYSTEM_PROMPT`** - added two sentences: recognize short recurring phrases (optionally followed by
-a title word like "công"/"ông"/"nương") as names and preserve them rather than translating their
-literal meaning, and stay grounded in the given reading rather than substituting content from a
-different line even if the source work is recognized (a general anti-fabrication instruction,
-covering the harder symptom too even without a confirmed specific cause for it). **This is a
-proposed change, not a validated one** - guarded only by a wording-presence unit test
-(`test_prompt_addresses_proper_nouns_and_fabrication`), not tested against the real API yet. Per
-this project's own established pattern (the first prompt fix was validated on a cheap 156-line
-sample before any full-corpus commitment - see "Fix, validated against the real API" above), this
-should get the same small-sample validation before being trusted, ideally bundled into the same
-session as the still-paused full re-run rather than as a separate paid pass.
+**A fix for the proper-noun half was added to `translate_lib/llm_translate.py`'s `SYSTEM_PROMPT`**
+- two sentences: recognize short recurring phrases (optionally followed by a title word like
+"công"/"ông"/"nương") as names and preserve them rather than translating their literal meaning,
+and stay grounded in the given reading rather than substituting content from a different line
+even if the source work is recognized (a general anti-fabrication instruction, covering the
+harder symptom too even without a confirmed specific cause for it).
 
-**This raises the stakes on the still-paused full re-run** (see "Fix, validated against the real
-API" above) for the ~65% of the bucket the already-validated fix should help, while the proper-noun
-addition above is a candidate for the other ~35% - unvalidated, so not yet counted as fixed.
+**Validated against the real API, combined with the first fix - $0.4176, same 156-line sample as
+the first validation (seed=11, same 6 reference + 150 random lines) for direct comparability:**
+
+| Metric | Old prompt | New prompt (both fixes) |
+|---|---|---|
+| Low-confidence rate (156 lines) | 66.0% | 23.7% |
+| Mean `edit_similarity` (99 alignment-confident lines) | 0.610 | **0.773** |
+| Mean `word_jaccard` (99 alignment-confident lines) | 0.446 | **0.581** |
+
+This is a stronger check than the earlier free 9-line proxy (see "Confirmed at full bucket scale"
+above): 99 real ground-truth-scorable lines from a fresh run, not an extrapolation. The one known
+proper-noun failure case that happened to land in this sample confirms the fix directly:
+`Tale of Kieu 1871/page107_18.jpg` went from "**Ông** nghe nói vậy mà lòng thương xót" (old - drops
+the name) to "**Hầu công** nghe nói mà thương tình" (new - correctly preserved as a title, close to
+the real "**Hồ công** nghe nói thương tình,"). The other two known cases (`page18a_12.jpg`,
+`page052b_14.jpg`) weren't in this particular 156-line sample, so remain unchecked individually.
+
+Output of this run: `/scratch/prompt_fix2_sample_results.json` (scratchpad only, not committed -
+same convention as the first validation's sample output).
+
+**Both fixes are now validated together, not just theorized.** This substantially strengthens the
+case for the still-paused full corpus re-run (~$14, ~47 min) - it's confirmed, not just expected,
+to improve real translation accuracy across both failure classes found in this investigation.
 
 Output: `data/low_score_diagnosis.json` (gitignored).
 
-**Not yet done:** validating the proper-noun/anti-fabrication prompt addition against the real
-API (a cheap sample, not the full corpus, following the established pattern); classifying the ~40
-lines in that bucket beyond the handful manually inspected.
+**Not yet done:** the actual full-corpus re-run itself (validated as worthwhile, not yet executed
+- deliberately deferred, not forgotten); classifying the ~40 proper-noun/fabrication-bucket lines
+beyond the handful manually inspected and the one directly re-validated above.
 
 ## Known simplifications (flagged, not silently assumed)
 
