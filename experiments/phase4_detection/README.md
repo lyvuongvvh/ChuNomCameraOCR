@@ -104,8 +104,68 @@ Per the plan, this is real, well-evidenced grounds to escalate to **Rung 1** (`k
 fine-tuning on the real `gts/*.txt` ground truth) rather than continuing to tune Rung 0's
 post-processing heuristic.
 
+## Rung 1: scoping - two environment bugs fixed, fine-tuning signal confirmed real
+
+Before committing to a real training run, ran small CPU sanity trials to check the mechanics and
+get real, not assumed, numbers to scope the full run from.
+
+**Data prep**: `scripts/build_segtrain_data.py` converts `gts/*.txt` quads into PageXML at
+whole-page granularity, reusing `build_finetune_data.py`'s synthetic-baseline geometry (top-edge
+midpoint -> bottom-edge midpoint). It excludes any page in `--exclude-manifest` from the training
+pool entirely - the same pages `score_detection.py` evaluates against must never be trained on,
+mirroring Phase 0's own documented Train/Validate contamination fix.
+
+**Two real environment bugs, found and fixed, not training-data issues:**
+- `ketos segtrain` crashed at the very first callback (`IndexError: pop from empty list` in
+  `rich.console.clear_live()`) regardless of data. Root cause: kraken's dependency pin leaves
+  `rich` unbounded, so pip resolved `rich==15.0.0`, whose `Console.clear_live()` now raises
+  instead of no-op'ing when `pytorch_lightning==2.0.9`'s `RichProgressBar` calls it before any
+  `Live` was ever pushed - a real version incompatibility. Fixed by pinning `rich<14` in
+  `docker/Dockerfile`.
+- Once that was fixed, training crashed mid-epoch with `RuntimeError: DataLoader worker ... killed
+  by signal: Bus error` - Docker's default `/dev/shm` (64MB) is too small for PyTorch's
+  multiprocess DataLoader. Fixed by passing `--shm-size=2g` to `docker run`.
+
+**From-scratch training doesn't work at this scale.** A first trial (`-N 2`, no `-i`, 34 training
+pages, all from one work) trained a fresh randomly-initialized 1.3M-param net and finished with
+`val_mean_iu: 0.0` on both epochs - high pixel accuracy (0.974-0.977) came entirely from the
+dominant background class; the model learned to predict no baselines anywhere. Confirmed at
+inference: 0 raw detections. Expected for this little data from random init, not a bug.
+
+**Fine-tuning from kraken's own bundled weights works.** Kraken's generic default model (the same
+`blla.mlmodel` Rung 0 used, resolved via `pkg_resources.resource_filename('kraken', 'blla.mlmodel')`)
+was passed as `-i` with `--resize both`, same 34-page trial, `-N 3`. `val_mean_iu` climbed
+0.003 -> 0.032 -> 0.08 across the 3 epochs (still rising, not plateaued) - a real, nonzero,
+improving signal `blla.segment()` alone (Rung 0's actual weights) could never show on its own.
+At inference on the known tuning page (`DVSKTT_thu_III_1a`, 9 real GT columns at x-centers
+33.0/64.0/92.0/121.5/152.0/180.0/210.0/239.5/269.5), the 3-epoch checkpoint produced 20 raw
+fragments clustering almost exactly onto those 9 positions (vs. 114 badly-fragmented raw
+detections from the unmodified generic model, and 0 from the from-scratch attempt) - already
+close to usable without even reaching for `merge_by_xposition`.
+
+**Important caveat, not yet resolved:** all 40 trial pages came from a single work (`DVSKTT-1
+Quyen thu`) - manifest.json's default ordering, not a deliberate choice. This result shows
+fine-tuning *can* learn this domain fast, but says nothing about whether it generalizes across the
+other works' different scan characteristics, which is the entire reason Rung 0 failed and Rung 1
+exists. The real training set must be stratified across all works, not just alphabetically-first
+pages - not yet built.
+
+**Compute scoping, from measured trial timing:** ~10 minutes/epoch on CPU for 34 pages. That's
+roughly linear in page count (whole-page forward/backward passes dominate), so a few-hundred-page
+stratified training set would already push into hours/epoch, and the full ~2,938-page pool
+(2,953 minus the 15 held out for evaluation) would be roughly 14 hours/epoch - not practical
+locally. Per Phase 0/2c's own precedent (Kaggle GPU for the recognizer's fine-tuning), the real
+Rung 1 run should move to Kaggle GPU, reusing `experiments/phase2c_finetune`'s
+`kernel-metadata.json` + Kaggle Kernels API push/pull pattern rather than inventing a new one.
+
 ## Status
 
 Rung 0 (kraken generic segmenter + x-position merge) closed out: does not pass, root cause is a
 heuristic that doesn't generalize across this dataset's different scan sources, not a threshold
-value. Escalating to Rung 1 (`ketos segtrain` fine-tuning) next, per the approved plan.
+value.
+
+Rung 1 (`ketos segtrain` fine-tuning) scoping in progress: pipeline mechanically validated,
+fine-tuning-from-bundled-weights confirmed to produce a real, improving signal (as opposed to
+training from scratch, which does not work at this scale) on one work. Not yet done: a
+work-stratified training set, an early-stopping / epoch-budget policy (still climbing after only
+3 epochs - unclear how many are actually needed), and moving the real run to Kaggle GPU.

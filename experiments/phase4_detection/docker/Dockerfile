@@ -16,4 +16,11 @@ RUN pip install --no-cache-dir \
     'shapely' \
     'pillow'
 
+# kraken's own pin leaves rich unbounded; pip resolves it to rich>=15, whose Console.clear_live()
+# raises IndexError instead of no-op'ing when pytorch_lightning 2.0.9's RichProgressBar calls it
+# before any Live was pushed - crashes `ketos segtrain` at the very first sanity-check callback,
+# every time, regardless of training data. Confirmed by reproducing then fixing with this pin
+# (see README.md's Rung 1 section) - not a training-data or config issue.
+RUN pip install --no-cache-dir 'rich<14'
+
 WORKDIR /workspace

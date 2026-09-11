@@ -37,21 +37,24 @@ def upscale_if_small(img: Image.Image, target_long_side: int = DEFAULT_MIN_LONG_
     return img.resize(new_size, Image.LANCZOS)
 
 
-def segment_page(img_path: str, upscale: bool = False) -> list[Quad]:
-    """Runs kraken's generic bundled segmenter (model=None) on one page, returns the raw
-    (unfiltered) detected regions as Quads using each line's 'boundary' polygon - not the
-    'baseline' polyline, which is a curve through the line's center, not its extent, and would
-    need to be inflated into a region by some assumed width. kraken already computes a real
-    boundary polygon per line (confirmed by direct inspection - see README.md); use that
-    directly rather than re-deriving something worse from the baseline.
+def segment_page(img_path: str, upscale: bool = False, model_path: str | None = None) -> list[Quad]:
+    """Runs kraken's segmenter on one page - the generic bundled default (model=None) unless
+    model_path points at a Rung 1 fine-tuned checkpoint (see scripts/build_segtrain_data.py,
+    README.md) - and returns the raw (unfiltered) detected regions as Quads using each line's
+    'boundary' polygon - not the 'baseline' polyline, which is a curve through the line's center,
+    not its extent, and would need to be inflated into a region by some assumed width. kraken
+    already computes a real boundary polygon per line (confirmed by direct inspection - see
+    README.md); use that directly rather than re-deriving something worse from the baseline.
     """
     from kraken import blla
+    from kraken.lib import vgsl
 
     img = Image.open(img_path).convert("L")
     if upscale:
         img = upscale_if_small(img)
 
-    seg = blla.segment(img, text_direction="vertical-rl", model=None)
+    model = vgsl.TorchVGSLModel.load_model(model_path) if model_path else None
+    seg = blla.segment(img, text_direction="vertical-rl", model=model)
     lines = seg["lines"] if isinstance(seg, dict) else seg.lines
 
     quads = []
