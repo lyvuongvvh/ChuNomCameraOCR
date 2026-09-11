@@ -201,16 +201,21 @@ not flags in general.
 **21.2% is now below prose's own baseline rate (24-29%)** on this sample - arguably a slight
 overcorrection, though the sample is small (156 lines, not the full 1,823+407 poetry lines).
 
-**Not yet applied to the shipped corpus** - `data/translations_full.json` still reflects the old
-prompt (budget spent on the validation test, not a full re-run). Re-running the full poetry
-subset (~2,230 lines) with the fixed prompt would cost roughly $4-5 more; the full 7,577-line
-corpus, roughly $14 again. Neither has been run - this section documents the fix and its
-validation, not a corrected corpus.
+**Now applied to the shipped corpus.** `data/translations_full.json` was regenerated with the
+fixed prompt (both this fix and the proper-noun/anti-fabrication fix below, combined) over all
+7,577 lines - real cost **$22.22** (higher than the ~$14 estimate, since both prompt additions
+made `SYSTEM_PROMPT` longer, raising input tokens on every call), 0 errors. The pre-fix corpus is
+preserved as `data/translations_full_old_prompt.json` for before/after comparison. Full-corpus
+low-confidence rate: **36.7% → 24.7%** - close to this section's 156-line sample estimate.
+Real API usage limits interrupted the run partway through (1,675 of 7,577 lines done before
+hitting a configured account cap) - resumed cleanly via `--resume` once the limit was raised, with
+zero lost work or duplicate cost for the completed lines.
 
 **This validation only measured the low-confidence rate - a later pass found the same fix also
 measurably improves real translation accuracy** on lines that weren't even flagged low-confidence
 in the first place (mean `edit_similarity` against real ground truth 0.383→0.666 on 9 lines
-checked for free from this same sample) - see "Root-causing low-scoring lines" below.
+checked for free from this same sample) - see "Root-causing low-scoring lines" below for that
+finding, now confirmed at full corpus scale as well.
 
 **Cross-edition consistency check (Kiều-specific, needs no ground truth):** found 60 lines where
 the post-corrected Han-Nôm text is byte-identical across 2-3 of the poem's 3 digitized editions
@@ -502,32 +507,41 @@ Different metrics for different ground-truth kinds (`eval_lib/scoring.py`,
   consistent with the real one for this passage" check, not a fluency or exactness score.
 
 **Results** (`translation` field, with `translate_lib.llm_translate`'s own `[LOW CONFIDENCE: ...]`
-self-assessment note stripped before scoring):
+self-assessment note stripped before scoring). First scored against the pre-fix corpus (old
+prompt), then re-scored after the full corpus was regenerated with both prompt fixes (see "Fix,
+validated against the real API" and "Root-causing low-scoring lines" below) - both are real,
+full-corpus numbers, not samples:
 
-| Work | Metric | n | Mean | Self-confident | Self-flagged LOW CONFIDENCE |
-|---|---|---|---|---|---|
-| Kiều | edit_similarity | 1,188 | 0.609 | 0.695 | 0.531 |
-| Kiều | word_jaccard | 1,188 | 0.469 | 0.578 | 0.371 |
-| Lục Vân Tiên | edit_similarity | 158 | 0.584 | 0.644 | 0.535 |
-| Lục Vân Tiên | word_jaccard | 158 | 0.403 | 0.487 | 0.334 |
-| DVSKTT | word_recall | 4,976 | 0.699 | 0.721 | 0.635 |
+| Work | Metric | n | Old prompt mean | New prompt mean | Self-confident (new) | Self-flagged LOW CONFIDENCE (new) |
+|---|---|---|---|---|---|---|
+| Kiều | edit_similarity | 1,188 | 0.609 | **0.768** | 0.795 | 0.640 |
+| Kiều | word_jaccard | 1,188 | 0.469 | **0.607** | 0.645 | 0.426 |
+| Lục Vân Tiên | edit_similarity | 158 | 0.584 | **0.741** | 0.765 | 0.590 |
+| Lục Vân Tiên | word_jaccard | 158 | 0.403 | **0.523** | 0.546 | 0.368 |
+| DVSKTT | word_recall | 4,976 | 0.699 | 0.709 | 0.730 | 0.644 |
 
-**The headline finding**: in every single work, on every metric, self-flagged LOW CONFIDENCE
-lines score measurably lower against real ground truth than self-confident ones - genuine
-evidence (not assumed) that the model's own confidence flag tracks real translation quality, not
-just noise. This is a meaningful validation of the low-confidence mechanism itself, complementing
-(not contradicting) the earlier finding that poetry's *raw* low-confidence rate was inflated by a
-prompt-calibration bug (see "Follow-up investigation" above) - even after that miscalibration,
-when the model does flag low confidence, it's genuinely more often wrong.
+DVSKTT is essentially flat (0.699→0.709) - expected, since both prompt fixes are worded for
+Nôm poetry specifically and don't touch DVSKTT's prose path (confirmed separately below).
 
-**Reading the absolute numbers, not just the confident/low-confidence gap**: Kiều/Lục Vân Tiên's
-mid-0.5-0.6 edit_similarity averages look unimpressive at first glance, but spot-checking the
-worst-scoring lines shows this metric being genuinely harsh on *good* paraphrases, not catching
-bad ones - e.g. `translation` "Gió sấm nổi lên, bày binh dàn trận." scored only 0.19 against
-reference "Phong lôi nổi trận bời bời," despite "phong lôi" (wind-thunder) and "gió sấm" being the
-same idea in different words. `word_jaccard`'s lower absolute numbers reflect the same
-paraphrase-tolerance trade-off from the other direction (a synonym contributes to `edit_similarity`
-partially via shared substrings, but zero to `word_jaccard` if the words don't literally match).
+**The headline finding, and it survives the full re-run**: in every single work, on every metric,
+self-flagged LOW CONFIDENCE lines score measurably lower against real ground truth than
+self-confident ones - genuine evidence (not assumed) that the model's own confidence flag tracks
+real translation quality, not just noise, both before and after the fix. This is a meaningful
+validation of the low-confidence mechanism itself, complementing (not contradicting) the earlier
+finding that poetry's *raw* low-confidence rate was inflated by a prompt-calibration bug (see
+"Follow-up investigation" above) - even after that miscalibration, when the model does flag low
+confidence, it's genuinely more often wrong.
+
+**Reading the absolute numbers, not just the old/new gap**: even after the fix, Kiều/Lục Vân
+Tiên's ~0.7-0.77 edit_similarity averages aren't 1.0, and spot-checking the remaining low-scoring
+lines (see "Root-causing low-scoring lines" below) shows this metric being genuinely harsh on
+*good* paraphrases, not just catching bad ones - e.g. one `translation` from the pre-fix corpus,
+"Gió sấm nổi lên, bày binh dàn trận," scored only 0.19 against reference "Phong lôi nổi trận bời
+bời," despite "phong lôi" (wind-thunder) and "gió sấm" being the same idea in different words.
+`word_jaccard`'s lower absolute numbers reflect the same paraphrase-tolerance trade-off from the
+other direction (a synonym contributes to `edit_similarity` partially via shared substrings, but
+zero to `word_jaccard` if the words don't literally match). So the true accuracy improvement from
+the fix is very likely larger than even these already-substantial numbers show.
 
 **A real statistical caveat in DVSKTT's `word_recall`, checked not just suspected**: very short
 translated lines score systematically lower for a boring reason, not a translation-quality one -
@@ -556,13 +570,26 @@ words/order), or **unexplained** (none of the above - OCR right, dictionary reso
 overlap much either - candidate genuine Stage 2 mistakes, flagged for manual review, not
 auto-diagnosed further).
 
-| Work | n (bottom quartile) | OCR error | Dictionary gap | Likely valid paraphrase | Unexplained |
-|---|---|---|---|---|---|
-| Kiều | 298 | 41.9% | 18.1% | 5.4% | 34.6% |
-| Lục Vân Tiên | 40 | 57.5% | 10.0% | 2.5% | 30.0% |
-| DVSKTT | 1,259 | 81.3% | 3.3% | n/a | 15.5% |
+Run against the pre-fix corpus first, then re-run after the full corpus was regenerated with both
+prompt fixes - the bottom quartile is always ~25% of the corpus by construction, so these are
+two different (though overlapping) sets of lines, not the same 298 lines re-graded:
 
-DVSKTT's overwhelming OCR-error share (81.3%) makes sense structurally: prose sentences are
+| Work | n (old→new) | OCR error (old→new) | Dictionary gap | Likely valid paraphrase | Unexplained (old→new) |
+|---|---|---|---|---|---|
+| Kiều | 298→302 | 41.9%→40.4% | 18.1%→16.2% | 5.4%→**17.9%** | 34.6%→**25.5%** |
+| Lục Vân Tiên | 40→41 | 57.5%→56.1% | 10.0%→9.8% | 2.5%→9.8% | 30.0%→24.4% |
+| DVSKTT | 1,259→1,320 | 81.3%→81.0% | 3.3%→3.1% | n/a | 15.5%→15.9% |
+
+Two things move together as expected: the **unexplained** share shrinks for both poetry works
+(the fixed cases moved out of the bottom quartile entirely, since their scores improved), while
+the **likely valid paraphrase** share grows, especially for Kiều (5.4%→17.9%) - once the literal-
+vs-phonetic bug stopped contributing badly-wrong translations to the bottom quartile, a larger
+fraction of what's left there is now genuinely correct translations the metric just scores
+harshly for using different words - exactly the dynamic described in "Reading the absolute
+numbers" above, now visible in the bucket composition too. DVSKTT is unchanged within noise, as
+expected (the fixes don't touch its prose path).
+
+DVSKTT's overwhelming OCR-error share (~81%) makes sense structurally: prose sentences are
 longer and more syntactically dependent than a 6/8-syllable verse line, so a single wrong
 character has more surface area to derail. **This also means most of DVSKTT's low `word_recall`
 scores are explained by upstream OCR, not a translation or ground-truth problem** - a useful,
@@ -678,17 +705,21 @@ the real "**Hồ công** nghe nói thương tình,"). The other two known cases 
 Output of this run: `/scratch/prompt_fix2_sample_results.json` (scratchpad only, not committed -
 same convention as the first validation's sample output).
 
-**Both fixes are now validated together, not just theorized.** This substantially strengthens the
-case for the still-paused full corpus re-run (~$14, ~47 min) - it's confirmed, not just expected,
-to improve real translation accuracy across both failure classes found in this investigation.
+**Both fixes are now validated together, not just theorized - and the full corpus has since been
+regenerated with them** (see "Fix, validated against the real API" above for the real cost and
+full-scale numbers: $22.22, low-confidence 36.7%→24.7%, edit_similarity/word_jaccard improvements
+matching this sample's predictions almost exactly). `data/translations_full.json` now reflects
+both fixes; the pre-fix corpus is preserved as `data/translations_full_old_prompt.json`.
 
 ### DVSKTT's "unexplained" bucket: checked separately - a different, already-documented cause
 
 The two prompt fixes above were designed around Kiều/Lục Vân Tiên's *poetry* failure modes and
 worded accordingly ("Nôm poetry lines often mention recurring characters..."), so they're scoped
-to NOT apply to DVSKTT's prose. Before committing to that scoping, checked whether DVSKTT's own
-195-line "unexplained" bucket shows the same proper-noun/fabrication pattern and would need the
-same widening - it does not, on real evidence, not assumption:
+to NOT apply to DVSKTT's prose. Before committing to that scoping (this check was done on the
+pre-fix diagnosis snapshot, 195 lines - DVSKTT's near-identical before/after numbers above confirm
+it's still representative, since nothing here touches DVSKTT's path), checked whether DVSKTT's own
+"unexplained" bucket shows the same proper-noun/fabrication pattern and would need the same
+widening - it does not, on real evidence, not assumption:
 
 - **77.4% (151 of 195) of these lines have a Han source of 4 characters or fewer.** Sampling both
   the shortest and the "longer" (≥3 Vietnamese content words) subsets found the same thing every
@@ -710,9 +741,10 @@ existing, documented limitations, not by anything the two poetry-focused fixes a
 
 Output: `data/low_score_diagnosis.json` (gitignored).
 
-**Not yet done:** the actual full-corpus re-run itself (validated as worthwhile, not yet executed
-- deliberately deferred, not forgotten); classifying the ~40 proper-noun/fabrication-bucket lines
-beyond the handful manually inspected and the one directly re-validated above.
+**Not yet done:** classifying the remaining proper-noun/fabrication-bucket lines beyond the
+handful manually inspected and the one directly re-validated above; a deeper look at whether the
+"likely valid paraphrase" bucket's growth (see "Root-causing low-scoring lines" table above) means
+the metrics themselves, not just the prompt, are now the main limiting factor on measured accuracy.
 
 ## Known simplifications (flagged, not silently assumed)
 
