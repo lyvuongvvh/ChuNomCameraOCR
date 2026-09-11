@@ -407,13 +407,81 @@ specific edition wrote at the corresponding narrative moment.
 
 Output: `data/lvt_ground_truth.json` (gitignored), same schema as Kiều's.
 
-**Not yet done:** using either ground truth to actually score Phase 3's `translation` field (as
-opposed to the `reading` field used for alignment) - the `translation` field is the LLM's fluent
-paraphrase, which for Nôm poetry often already reads close to the modern verse itself (not a
-cross-language translation in the usual sense), so a real scoring pass would need to decide what
-"correct" means for a paraphrase rather than an exact transcription. Also not done:
-sourcing/aligning DVSKTT's real 1993 published translation (a genuine Han→Việt translation, not a
-same-language spelling normalization, so a different and harder kind of ground truth).
+### DVSKTT: a genuine translation, aligned by page structure instead of text similarity
+
+DVSKTT is not Vietnamese verse - it's real Literary Chinese prose, so the same trick Kiều/Lục Vân
+Tiên use (Stage 1's phonetic reading is already close to the modern spelling) doesn't apply at
+all: a Sino-Vietnamese reading like "sứ thông hảo chấp sự mê" bears no textual resemblance to how
+an actual translation renders that sentence ("Ta sai sứ giả sang thông hiếu..."). Text-similarity
+alignment is the wrong tool here; what's needed is a real Hán→Việt translation, aligned by
+physical page structure instead of content.
+
+**Ground truth**: the real 1993 published translation (Viện Khoa Học Xã Hội Việt Nam / Nhà xuất
+bản Khoa Học Xã Hội), fetched as OCR'd plain text from its Internet Archive item (`IViTSKTonTh`) -
+verified as the genuine published translation, not a paraphrase, by exact content match against
+dvsktt.com's own citations for the same passages.
+
+**Alignment mechanism**: the translation's own text carries inline markers like `[1a]`, `[1b]`,
+`[2a]`... marking where each *original Han woodblock leaf* begins - the exact same (quyển, leaf,
+side) identifiers NomNaOCR's manifest filenames already encode (e.g.
+`DVSKTT_ban_toan_V_30a_9.jpg` = Bản Kỷ Toàn Thư, quyển V, leaf 30 side a). This is a direct
+structural key lookup, not a fuzzy match - considerably more reliable than Kiều/Lục Vân Tiên's
+DP, but coarser: it recovers "the translated text of the leaf this line was written on," not a
+per-line exact correspondence, since Han prose doesn't segment into one-line-per-idea the way Nôm
+verse does - multiple OCR patches from the same leaf/side legitimately share one `reference_text`.
+
+**A real OCR-quality wrinkle in the translation itself**: the leaf markers are inconsistently
+garbled - "1" gets misread as "l"/"i"/"ì"/"Ì" depending on font context, and the *same* leaf 11
+appears as both `[lia]`→11a and `[llb]`→11b elsewhere in the same document. Handled with a narrow
+confusable-character whitelist (`eval_lib/dvsktt_ground_truth.py`'s `LEAF_MARKER_RE`) rather than
+accepting any bracketed text as a marker - a real bracketed annotation unrelated to pagination
+(`[Vu]`, found in the raw text, 16 occurrences) would otherwise get misparsed as a leaf number.
+
+**Results:**
+
+| Work | Lines | Matched to a translated leaf |
+|---|---|---|
+| DVSKTT-1 Quyển Thủ (front matter) | 188 | **0 (0.0%)** |
+| DVSKTT-2 Ngoại Kỷ | 530 | 525 (99.1%) |
+| DVSKTT-3 Bản Kỷ Toàn Thư | 2,146 | 2,060 (96.0%) |
+| DVSKTT-4 Bản Kỷ Thực Lục | 1,520 | 1,464 (96.3%) |
+| DVSKTT-5 Bản Kỷ Tục Biên | 963 | 927 (96.3%) |
+| **Total** | **5,347** | **4,976 (93.1%)** |
+
+Quyển Thủ (front-matter prefaces/genealogical tables) has zero coverage - checked, not a bug: the
+1993 translation's raw text has exactly two top-level sections ("Ngoại Kỷ" and a unified "Bản Kỷ",
+not split into Toàn Thư/Thực Lục/Tục Biên the way the manifest's filenames are - the manifest's
+three-way split maps directly onto contiguous, non-overlapping quyển ranges within that one
+unified numbering: I-X, XI-XV, XVI-XIX respectively, confirmed against the manifest itself), and
+neither includes Quyển Thủ at all - this specific published edition apparently omits the
+front-matter volume from the main body's translation.
+
+The ~4% misses in the other four works were checked, not just counted: e.g. `[4a]` exists in Bản
+Kỷ quyển IV but `[4b]` never appears anywhere in that quyển at all in this OCR derivative - a
+genuine, sparse gap in the source scan, not a bug in the marker-parsing regex. Left as
+no-ground-truth rather than guessed at (e.g. by assuming everything between `[4a]` and `[5a]`
+belongs to leaf 4b, which would blur reliable structural matches with inference).
+
+**Quality spot-check**: cross-referenced several aligned lines against Phase 3's own independently-
+generated `translation` field (Stage 2's LLM output) for the same line - not the same source as
+the ground truth, so agreement is a real signal, not circular. Found close, sometimes near-verbatim
+matches: `曰悔不用勝福之言故也` → our translation "hối hận vì đã không nghe theo lời của Thắng Phúc"
+vs. the 1993 leaf's "hối không nghe lời của Thắng và Phúc" - essentially the same sentence. Another
+case caught our own translation's uncertainty: our LLM (correctly, self-flagged low-confidence)
+misread a name in `召拱垣立後...` as "Triệu Thành", but the 1993 leaf's "gọi Củng Viên đứng đằng sau"
+confirms the right name is "Củng Viên" - while both independently agree on the shame/embarrassment
+theme of the passage ("lộ vẻ thẹn thùng" / "Tòng Giáo rất thẹn").
+
+Output: `data/dvsktt_ground_truth.json` (gitignored), keyed by `img_name`, giving `work`, `quyen`,
+`leaf`, `side`, `han_text`, `reference_text` (the whole matched leaf's translated text - no
+per-line `similarity` score, since this is an exact structural match, not a fuzzy one).
+
+**Not yet done:** using any of the three works' ground truth to actually score Phase 3's
+`translation` field systematically (as opposed to the few-line spot-checks above) - for
+Kiều/Lục Vân Tiên the `translation` field is often already a same-language paraphrase, not a
+cross-language translation in the usual sense, so a real scoring pass would need to decide what
+"correct" means for a paraphrase; for DVSKTT, the leaf-level (not line-level) granularity means a
+real scoring pass would need to handle one ground-truth chunk covering many OCR lines.
 
 ## Known simplifications (flagged, not silently assumed)
 
@@ -422,6 +490,12 @@ same-language spelling normalization, so a different and harder kind of ground t
   verse but likely picked the wrong one (see "A real parallel corpus" above). Any consumer of
   `kieu_ground_truth.json`/`lvt_ground_truth.json` must filter on `similarity` rather than
   trusting every `verse_number` equally.
+- **DVSKTT's ground truth is leaf-level, not line-level** - `dvsktt_ground_truth.json`'s
+  `reference_text` is the whole matched leaf's translated text, shared by every OCR line-patch
+  from that leaf/side. It has no `similarity` score (the match is an exact structural key lookup,
+  not fuzzy), but it also can't tell you which specific sentence within that leaf corresponds to
+  a given short line - a real granularity limitation, not a bug. Quyển Thủ (188 lines) has zero
+  coverage - this specific 1993 translation omits that front-matter volume entirely.
 - **Same-length restriction excludes 583 of 7,577 lines (7.7%)** where baseline/epoch8/
   corrected/ground-truth aren't all equal length - exactly the cases where a single insertion/
   deletion could misalign everything after it (Phase 2's own documented Character Accuracy

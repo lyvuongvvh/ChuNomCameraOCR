@@ -146,28 +146,37 @@ with a bonus: the "low confidence" fallback added to the prompt is now the two-l
 (thinking disabled first, low-confidence flag second, one automatic retry third - see
 `translate_line`'s docstring) instead of relying on prompt wording alone.
 
-## Ground truth for Kiều and Lục Vân Tiên: real alignment against Wikisource
+## Ground truth for all three works: alignment against Wikisource and a real translation
 
-Unlike DVSKTT (needs an actual Han→Việt translation), both Kiều and Lục Vân Tiên's source text was
-already composed in Vietnamese - so a clean modern-spelling edition (Vietnamese Wikisource's
-complete, verse-numbered text for each, public domain) IS the ground truth, no translation step
-needed. `eval_lib/wikisource_alignment.py` aligns each digitized edition (Kiều: 1866/1871/1872,
-via `scripts/build_kieu_ground_truth.py`; Lục Vân Tiên: one edition, via
-`scripts/build_lvt_ground_truth.py`) - only a few hundred spot-digitized verses each, not the
-whole poem, so this is a real subsequence-alignment problem, not just "manifest order = verse
-order" - via a Levenshtein-scored DP over Stage 1's phonetic reading, made affordable with
-n-gram-seeded candidate generation instead of a naive full search (see `results.md` for two
-cheaper approaches that were tried and gave wrong answers before landing on this one, plus real
-Wikisource transcription quirks found and handled along the way - inconsistent verse markers,
-inline footnotes, editorial templates). Result: 1,823 Kiều lines aligned (65.2% at similarity
-≥0.7) and 407 Lục Vân Tiên lines (38.8%). **Lục Vân Tiên's lower confidence is root-caused**: its
-Phase 2b OCR is genuinely the worst of the four editions by both Sequence Accuracy and CER,
-likely because its single edition has ~4x less training data reinforcing its vocabulary than
-Kiều's three editions combined. The residual gap beyond that (even perfect-OCR lines underperform
-Kiều's average) is **confirmed** genuine cross-edition textual variance, not a dictionary-choice
-artifact - see `results.md` for the full breakdown, worked examples, and honest failure cases. Output: `data/kieu_ground_truth.json` / `data/lvt_ground_truth.json`
-(gitignored). Not yet used to actually score the `translation` field, and DVSKTT still has no
-ground truth - see `results.md`'s "Not yet done."
+All three of NomNaOCR's source works now have real, non-LLM ground truth to check translations
+against - no more "there's nothing to score against" (see `results.md` for full detail on each):
+
+- **Kiều and Lục Vân Tiên** (`eval_lib/wikisource_alignment.py`) - both composed directly in
+  Vietnamese verse, so a clean modern-spelling edition (Vietnamese Wikisource's complete,
+  verse-numbered text for each, public domain) IS the ground truth, no translation step needed.
+  Aligns each digitized edition (Kiều: 1866/1871/1872, via `scripts/build_kieu_ground_truth.py`;
+  Lục Vân Tiên: one edition, via `scripts/build_lvt_ground_truth.py`) - only a few hundred
+  spot-digitized verses each, not the whole poem, so this is a real subsequence-alignment
+  problem, not just "manifest order = verse order" - via a Levenshtein-scored DP over Stage 1's
+  phonetic reading, made affordable with n-gram-seeded candidate generation instead of a naive
+  full search (two cheaper approaches were tried and gave wrong answers first). Result: 1,823
+  Kiều lines aligned (65.2% at similarity ≥0.7) and 407 Lục Vân Tiên lines (38.8%, root-caused to
+  genuinely worse upstream OCR plus a confirmed residual of real cross-edition textual variance -
+  not a dictionary or alignment-method artifact).
+- **DVSKTT** (`eval_lib/dvsktt_ground_truth.py`) - genuine Literary Chinese prose, so the
+  same-language trick above doesn't apply: a Sino-Vietnamese phonetic reading bears no
+  resemblance to how a real translation reads. Instead aligns by physical page structure: the
+  real 1993 published translation (fetched from Internet Archive) carries inline leaf markers
+  (`[1a]`, `[1b]`...) matching NomNaOCR's own filename convention exactly, so this is a direct
+  structural key lookup rather than a fuzzy text match - coarser (leaf-level, not line-level, so
+  many OCR patches share one leaf's translated text) but far more reliable when it hits. Result:
+  4,976 of 5,347 lines matched (93.1%) via `scripts/build_dvsktt_ground_truth.py` - Quyển Thủ
+  (front matter, 188 lines) has zero coverage since this specific translation omits it entirely.
+  Spot-checked against Phase 3's own independently-generated translations and found close,
+  sometimes near-verbatim agreement.
+
+Output: `data/kieu_ground_truth.json` / `data/lvt_ground_truth.json` / `data/dvsktt_ground_truth.json`
+(all gitignored). Not yet used to actually score the `translation` field at scale.
 
 ## What's not built yet
 
@@ -179,11 +188,11 @@ ground truth - see `results.md`'s "Not yet done."
   dropped 66.0%→21.2% for **$0.33**. `data/translations_full.json` still reflects the *old*
   prompt, though - re-running the full poetry subset (~$4-5) or the whole 7,577-line corpus
   (~$14) to regenerate it with the fix hasn't been done yet (budget-paused, not abandoned).
-- **Scoring translations against the new ground truth** - alignment is done (above), but actually
-  scoring the `translation` field against it isn't, since the field is often already a
-  same-language paraphrase for poetry, not a cross-language translation in the usual sense - see
-  `results.md`.
-- **A parallel corpus for DVSKTT** - the only remaining source work without one.
+- **Scoring translations against the new ground truth at scale** - alignment/matching is done for
+  all three works (above), but actually scoring the `translation` field against it systematically
+  isn't, since the field is often already a same-language paraphrase for poetry (not a
+  cross-language translation in the usual sense), and DVSKTT's ground truth is leaf-level, not
+  line-level - see `results.md`.
 
 ## Running Stage 1
 
