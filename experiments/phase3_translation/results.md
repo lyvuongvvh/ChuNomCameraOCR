@@ -643,21 +643,36 @@ outright fabrication:
   the starkest case, looking like a genuine fabrication rather than a word-sense slip.
 
 This is a real, distinct failure mode - not covered by the Nôm-verse-grammar prompt fix already
-validated above, and not yet addressed by any change to `translate_lib/llm_translate.py`. Likely
-candidates worth testing in a future pass (not attempted here, since testing a prompt change needs
-real API calls): giving the model more context than a single isolated line (character names
-recur across a poem, but each line is translated independently right now), or explicitly
-instructing it to preserve proper nouns/titles rather than translate them as common words.
+validated above. Confidence differs across the two symptoms: the proper-noun pattern is a
+plausible, addressable prompt gap (the prompt never told the model that a short recurring phrase
+could be a person's name rather than ordinary vocabulary); the single stark fabrication example
+is not enough data to diagnose a systematic cause (could be one-off model noise, not a repeatable
+pattern) - worth noting it is *not* the model substituting the real canonical poem from training
+data in place of the OCR'd line, since that would have scored *better* against ground truth, not
+worse.
+
+**A draft fix for the proper-noun half is now in `translate_lib/llm_translate.py`'s
+`SYSTEM_PROMPT`** - added two sentences: recognize short recurring phrases (optionally followed by
+a title word like "công"/"ông"/"nương") as names and preserve them rather than translating their
+literal meaning, and stay grounded in the given reading rather than substituting content from a
+different line even if the source work is recognized (a general anti-fabrication instruction,
+covering the harder symptom too even without a confirmed specific cause for it). **This is a
+proposed change, not a validated one** - guarded only by a wording-presence unit test
+(`test_prompt_addresses_proper_nouns_and_fabrication`), not tested against the real API yet. Per
+this project's own established pattern (the first prompt fix was validated on a cheap 156-line
+sample before any full-corpus commitment - see "Fix, validated against the real API" above), this
+should get the same small-sample validation before being trusted, ideally bundled into the same
+session as the still-paused full re-run rather than as a separate paid pass.
 
 **This raises the stakes on the still-paused full re-run** (see "Fix, validated against the real
-API" above) for the ~65% of the bucket it should help, while flagging that the remaining ~35%
-would NOT be fixed by that re-run alone - a different problem needing separate future work.
+API" above) for the ~65% of the bucket the already-validated fix should help, while the proper-noun
+addition above is a candidate for the other ~35% - unvalidated, so not yet counted as fixed.
 
 Output: `data/low_score_diagnosis.json` (gitignored).
 
-**Not yet done:** a real-API-validated fix for the proper-noun/hallucination pattern found above
-(only diagnosed here, no fix attempted or tested); classifying the ~40 lines in that bucket beyond
-the handful manually inspected.
+**Not yet done:** validating the proper-noun/anti-fabrication prompt addition against the real
+API (a cheap sample, not the full corpus, following the established pattern); classifying the ~40
+lines in that bucket beyond the handful manually inspected.
 
 ## Known simplifications (flagged, not silently assumed)
 

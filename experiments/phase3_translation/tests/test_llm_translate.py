@@ -79,6 +79,16 @@ class TestTranslateLine(unittest.TestCase):
         self.assertIn("VIETNAMESE verse", SYSTEM_PROMPT)
         self.assertIn("NOT by itself a sign of an OCR error", SYSTEM_PROMPT)
 
+    def test_prompt_addresses_proper_nouns_and_fabrication(self):
+        """Regression test: diagnosing low-scoring translations against real ground truth
+        (results.md, "Root-causing low-scoring lines") found a distinct failure pattern the
+        Nom-verse-grammar fix above doesn't cover - proper names/titles getting genericized
+        (e.g. "Ho cong" -> "Ong") and at least one apparent outright fabrication unrelated to the
+        actual reading. This addition is a proposed fix, NOT YET VALIDATED against the real API -
+        this test only guards the wording stays in the prompt, it doesn't confirm the fix works."""
+        self.assertIn("preserve it as a name", SYSTEM_PROMPT)
+        self.assertIn("do not substitute content from a different line", SYSTEM_PROMPT)
+
     def test_retries_once_on_empty_translation(self):
         client = MagicMock()
         client.messages.create.side_effect = [

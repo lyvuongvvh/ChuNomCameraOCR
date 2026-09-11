@@ -226,10 +226,12 @@ flagging the other ~35% needs separate future work - see `results.md`.
   not just the confidence flag. `data/translations_full.json` still reflects the *old* prompt,
   though - re-running the full poetry subset (~$4-5) or the whole 7,577-line corpus (~$14) to
   regenerate it with the fix hasn't been done yet (budget-paused, not abandoned).
-- **A real-API-validated fix for the proper-noun/hallucination pattern** found in the ~35% of the
-  "unexplained" bucket the prompt fix above doesn't cover - only diagnosed so far, no fix
-  attempted or tested (candidates: more context than a single isolated line, or explicit
-  instructions to preserve proper nouns) - see `results.md`.
+- **Validating the proper-noun/anti-fabrication prompt addition against the real API.** A draft
+  fix is in `translate_lib/llm_translate.py`'s `SYSTEM_PROMPT` for the ~35% of the "unexplained"
+  bucket the already-validated fix doesn't cover (proper names/titles getting genericized, plus
+  one apparent fabrication) - guarded only by a wording-presence unit test so far, not yet tested
+  against the real API. Should get the same cheap-sample validation the first fix got before being
+  trusted or rolled into the full corpus re-run - see `results.md`.
 
 ## Running Stage 1
 

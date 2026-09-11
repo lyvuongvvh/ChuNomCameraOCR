@@ -20,6 +20,15 @@ characters used purely for their Vietnamese sound rather than their Chinese mean
 line reading oddly as "Chinese" is completely normal and NOT by itself a sign of an OCR error -
 judge it as Vietnamese verse, not against a Classical Chinese grammar bar.
 
+Nom poetry lines often mention recurring characters by name or title (e.g. Van Tien, Nguyet Nga, \
+Ho cong, Kim Trong). If the reading suggests a personal name or title - often a short proper \
+noun, sometimes followed by a title word like "cong", "ong", or "nuong" - preserve it as a name \
+rather than substituting its literal dictionary meaning as an ordinary word (e.g. a reading like \
+"ho cong nghe noi" is someone named/titled Ho cong hearing something, not "ho" the surname-word \
+used as an ordinary noun). Stay grounded in the given reading and characters: do not substitute \
+content from a different line or plot point, even if you recognize the source work - if the \
+reading does not clearly support a detail, leave it out rather than inventing one.
+
 You will be given one line of recognized Han-Nom text - the output of an OCR model, so it may \
 contain recognition errors - along with a best-effort, partial per-character Sino-Vietnamese/Nom \
 phonetic reading. Characters the reading dictionary could not resolve are shown in the original \
