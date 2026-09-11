@@ -476,12 +476,73 @@ Output: `data/dvsktt_ground_truth.json` (gitignored), keyed by `img_name`, givin
 `leaf`, `side`, `han_text`, `reference_text` (the whole matched leaf's translated text - no
 per-line `similarity` score, since this is an exact structural match, not a fuzzy one).
 
-**Not yet done:** using any of the three works' ground truth to actually score Phase 3's
-`translation` field systematically (as opposed to the few-line spot-checks above) - for
-Kiều/Lục Vân Tiên the `translation` field is often already a same-language paraphrase, not a
-cross-language translation in the usual sense, so a real scoring pass would need to decide what
-"correct" means for a paraphrase; for DVSKTT, the leaf-level (not line-level) granularity means a
-real scoring pass would need to handle one ground-truth chunk covering many OCR lines.
+## Scoring Phase 3's translations against all three ground truths
+
+Different metrics for different ground-truth kinds (`eval_lib/scoring.py`,
+`scripts/score_translations.py`), not one applied uniformly:
+
+- **Kiều/Lục Vân Tiên**: the reference is a single verse, so direct comparison is possible - but
+  two metrics, not one, because they fail differently. `edit_similarity` (normalized Levenshtein)
+  is sensitive to word order and exact spelling, so it punishes a faithful translation that
+  merely reorders a clause or picks a synonym. `word_jaccard` (content-word set overlap, common
+  function words excluded) is order-independent and paraphrase-tolerant, but blind to word order
+  and can be fooled by unrelated sentences sharing a few common words. Reporting both - agreement
+  between them is a stronger signal than either alone. Only scored against alignment-confident
+  ground truth (similarity ≥0.7 - see above) - scoring against a likely-misaligned reference would
+  add noise, not signal.
+- **DVSKTT**: the reference is a whole leaf's text (many sentences), not one matching sentence -
+  edit distance against a whole page would be dominated by the length mismatch and mean nothing.
+  Only `word_recall` is meaningful: what fraction of the *translation's own* content words appear
+  *anywhere* in the matched leaf's real translation - a coarse "is this translation's vocabulary
+  consistent with the real one for this passage" check, not a fluency or exactness score.
+
+**Results** (`translation` field, with `translate_lib.llm_translate`'s own `[LOW CONFIDENCE: ...]`
+self-assessment note stripped before scoring):
+
+| Work | Metric | n | Mean | Self-confident | Self-flagged LOW CONFIDENCE |
+|---|---|---|---|---|---|
+| Kiều | edit_similarity | 1,188 | 0.609 | 0.695 | 0.531 |
+| Kiều | word_jaccard | 1,188 | 0.469 | 0.578 | 0.371 |
+| Lục Vân Tiên | edit_similarity | 158 | 0.584 | 0.644 | 0.535 |
+| Lục Vân Tiên | word_jaccard | 158 | 0.403 | 0.487 | 0.334 |
+| DVSKTT | word_recall | 4,976 | 0.699 | 0.721 | 0.635 |
+
+**The headline finding**: in every single work, on every metric, self-flagged LOW CONFIDENCE
+lines score measurably lower against real ground truth than self-confident ones - genuine
+evidence (not assumed) that the model's own confidence flag tracks real translation quality, not
+just noise. This is a meaningful validation of the low-confidence mechanism itself, complementing
+(not contradicting) the earlier finding that poetry's *raw* low-confidence rate was inflated by a
+prompt-calibration bug (see "Follow-up investigation" above) - even after that miscalibration,
+when the model does flag low confidence, it's genuinely more often wrong.
+
+**Reading the absolute numbers, not just the confident/low-confidence gap**: Kiều/Lục Vân Tiên's
+mid-0.5-0.6 edit_similarity averages look unimpressive at first glance, but spot-checking the
+worst-scoring lines shows this metric being genuinely harsh on *good* paraphrases, not catching
+bad ones - e.g. `translation` "Gió sấm nổi lên, bày binh dàn trận." scored only 0.19 against
+reference "Phong lôi nổi trận bời bời," despite "phong lôi" (wind-thunder) and "gió sấm" being the
+same idea in different words. `word_jaccard`'s lower absolute numbers reflect the same
+paraphrase-tolerance trade-off from the other direction (a synonym contributes to `edit_similarity`
+partially via shared substrings, but zero to `word_jaccard` if the words don't literally match).
+
+**A real statistical caveat in DVSKTT's `word_recall`, checked not just suspected**: very short
+translated lines score systematically lower for a boring reason, not a translation-quality one -
+lines with ≤2 content words average 0.559 recall vs 0.708 for lines with ≥6 content words. A
+2-content-word translation missing just one of them from the reference leaf drops straight to
+0.5 or 0.0; the same single miss barely dents a longer line's score. Confirmed with real examples:
+the worst-scoring DVSKTT lines are terse fragments like "Một thuyết cho rằng" (only "thuyết"
+survives stopword filtering) recall 0.0, while the best-scoring lines are longer sentences with
+distinctive proper nouns (e.g. "Nam Việt", "Ngô Sĩ Liên", "Triệu Túc") that are very likely to
+appear verbatim in the real translation if correctly recognized - a real dynamic (specific names
+being either clearly right or clearly wrong), but also a small-denominator statistical effect
+worth naming rather than reading as "short lines translate worse."
+
+Output: `data/translation_scores.json` (gitignored), with per-line scores plus the translation
+and reference text used, for further inspection.
+
+**Not yet done:** any deeper investigation of *why* specific low-scoring lines are wrong (OCR
+error vs. Stage 1 dictionary gap vs. genuine Stage 2 translation mistake vs. metric harshness on
+a valid paraphrase) - this scoring pass identifies *which* lines are likely wrong, not *why*, for
+all but the handful manually spot-checked above.
 
 ## Known simplifications (flagged, not silently assumed)
 
@@ -496,6 +557,15 @@ real scoring pass would need to handle one ground-truth chunk covering many OCR 
   not fuzzy), but it also can't tell you which specific sentence within that leaf corresponds to
   a given short line - a real granularity limitation, not a bug. Quyển Thủ (188 lines) has zero
   coverage - this specific 1993 translation omits that front-matter volume entirely.
+- **`word_recall`/`word_jaccard` word-splitting has no real Vietnamese word segmenter** - tokens
+  are whitespace/punctuation-split syllables, and STOPWORDS is a manually curated, non-exhaustive
+  list (no POS tagger available here), not a claim of linguistic completeness. `word_recall` in
+  particular is noisy on short lines (≤2 content words average 0.559 vs 0.708 for ≥6 - see
+  "Scoring" above) since a single missing word swings the score by 0.5 or more.
+- **`edit_similarity`/`word_jaccard` penalize valid paraphrase, not just real errors** - Kiều/Lục
+  Vân Tiên's `translation` field is a fluency pass, not a word-for-word transcription, so a
+  synonym or reordered clause can score badly despite being a correct translation (see "Scoring"
+  above for a concrete example). Low scores flag lines worth a human look, not confirmed errors.
 - **Same-length restriction excludes 583 of 7,577 lines (7.7%)** where baseline/epoch8/
   corrected/ground-truth aren't all equal length - exactly the cases where a single insertion/
   deletion could misalign everything after it (Phase 2's own documented Character Accuracy

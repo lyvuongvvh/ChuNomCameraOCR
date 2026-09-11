@@ -176,7 +176,22 @@ against - no more "there's nothing to score against" (see `results.md` for full 
   sometimes near-verbatim agreement.
 
 Output: `data/kieu_ground_truth.json` / `data/lvt_ground_truth.json` / `data/dvsktt_ground_truth.json`
-(all gitignored). Not yet used to actually score the `translation` field at scale.
+(all gitignored).
+
+## Scoring translations against all three ground truths
+
+`scripts/score_translations.py` (`eval_lib/scoring.py`) scores Phase 3's `translation` field for
+real, using different metrics for the two ground-truth kinds (Kiều/Lục Vân Tiên: `edit_similarity`
++ `word_jaccard` against a single matching verse; DVSKTT: `word_recall` against a whole leaf's
+text, since edit distance against a multi-sentence page would be meaningless) - see `results.md`
+for why. **The headline finding**: in every single work, on every metric, lines the model
+self-flagged `[LOW CONFIDENCE: ...]` score measurably lower against real ground truth than
+self-confident ones (e.g. Kiều edit_similarity 0.695 confident vs. 0.531 low-confidence) - real
+evidence the confidence flag tracks actual translation quality, not just noise. Two real caveats
+found and documented, not glossed over: `edit_similarity`/`word_jaccard` can score a genuinely
+good paraphrase badly (verse translation is a fluency pass, not a transcription), and DVSKTT's
+`word_recall` is noisy on very short lines (a single missing word swings the score by 0.5+) -
+confirmed with real numbers (0.559 avg for ≤2-content-word lines vs. 0.708 for ≥6).
 
 ## What's not built yet
 
@@ -188,11 +203,9 @@ Output: `data/kieu_ground_truth.json` / `data/lvt_ground_truth.json` / `data/dvs
   dropped 66.0%→21.2% for **$0.33**. `data/translations_full.json` still reflects the *old*
   prompt, though - re-running the full poetry subset (~$4-5) or the whole 7,577-line corpus
   (~$14) to regenerate it with the fix hasn't been done yet (budget-paused, not abandoned).
-- **Scoring translations against the new ground truth at scale** - alignment/matching is done for
-  all three works (above), but actually scoring the `translation` field against it systematically
-  isn't, since the field is often already a same-language paraphrase for poetry (not a
-  cross-language translation in the usual sense), and DVSKTT's ground truth is leaf-level, not
-  line-level - see `results.md`.
+- **Investigating *why* specific low-scoring lines are wrong** - scoring (above) identifies which
+  lines are likely wrong, not why (OCR error vs. dictionary gap vs. genuine Stage 2 mistake vs.
+  metric harshness on a valid paraphrase) - only spot-checked for a handful of examples so far.
 
 ## Running Stage 1
 
