@@ -466,6 +466,29 @@ unified numbering: I-X, XI-XV, XVI-XIX respectively, confirmed against the manif
 neither includes Quyển Thủ at all - this specific published edition apparently omits the
 front-matter volume from the main body's translation.
 
+**Follow-up: is a translation for Quyển Thủ available anywhere else? Checked three independent
+sources - genuinely not, not just unsearched.** Quyển Thủ turns out to be real, substantive
+content, not administrative filler: its Han text (checked directly) is a scholarly historiographic
+preface discussing the purpose of history-writing and dynastic legitimacy, and manifest's I-VII
+sub-quyển structure maps exactly onto 7 named front-matter documents ("Tục biên tự," "Ngoại kỷ
+toàn thư tự," "Toàn thư phàm lệ," "Khảo tổng luận," etc. - confirmed via dvsktt.com's own site
+structure). The largest of these, "Khảo tổng luận," is closely related to (though per dvsktt.com's
+own site, not identical to) "Đại Việt Thông Giám Tổng Luận," a real named historiographic work by
+16th-century scholar Lê Tung - a real reason to expect a standalone translation might exist
+somewhere, since it's independently citable/studied Vietnamese historiography, not just book
+front-matter.
+
+Checked directly: (1) the 1993 Internet Archive translation - absent, as above; (2) dvsktt.com
+itself, a site explicitly built to pair every page's Han text with a "dịch quốc ngữ" (Vietnamese
+translation) section, checked on two different Quyển Thủ sub-sections ("Ngoại kỷ toàn thư tự" and
+"Khảo tổng luận") - both show only the scan and phonetic transliteration, no translation section,
+consistent with the site's own "đang thực hiện" (still in progress) status, and even the
+transliteration itself cuts off mid-sentence on both pages checked; (3) a general web search for a
+standalone published translation of "Đại Việt Thông Giám Tổng Luận" specifically - found only
+Vietnamese-language secondary discussion of the work's history (who commissioned it, when), no
+translated text. Three independent, purpose-appropriate sources, same negative result - this is a
+genuine current gap in publicly available data, not a search that stopped early.
+
 The ~4% misses in the other four works were checked, not just counted: e.g. `[4a]` exists in Bản
 Kỷ quyển IV but `[4b]` never appears anywhere in that quyển at all in this OCR derivative - a
 genuine, sparse gap in the source scan, not a bug in the marker-parsing regex. Left as
@@ -758,7 +781,9 @@ the metrics themselves, not just the prompt, are now the main limiting factor on
   from that leaf/side. It has no `similarity` score (the match is an exact structural key lookup,
   not fuzzy), but it also can't tell you which specific sentence within that leaf corresponds to
   a given short line - a real granularity limitation, not a bug. Quyển Thủ (188 lines) has zero
-  coverage - this specific 1993 translation omits that front-matter volume entirely.
+  coverage - checked three independent sources (the 1993 translation, dvsktt.com's own
+  purpose-built site, a general web search), all confirm no accessible translation exists for
+  this front-matter volume - a genuine current data gap, not an unsearched one.
 - **`word_recall`/`word_jaccard` word-splitting has no real Vietnamese word segmenter** - tokens
   are whitespace/punctuation-split syllables, and STOPWORDS is a manually curated, non-exhaustive
   list (no POS tagger available here), not a claim of linguistic completeness. `word_recall` in

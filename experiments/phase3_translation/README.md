@@ -173,7 +173,9 @@ against - no more "there's nothing to score against" (see `results.md` for full 
   structural key lookup rather than a fuzzy text match - coarser (leaf-level, not line-level, so
   many OCR patches share one leaf's translated text) but far more reliable when it hits. Result:
   4,976 of 5,347 lines matched (93.1%) via `scripts/build_dvsktt_ground_truth.py` - Quyển Thủ
-  (front matter, 188 lines) has zero coverage since this specific translation omits it entirely.
+  (front matter, 188 lines) has zero coverage. Checked three independent sources for an
+  alternative translation (the 1993 edition, dvsktt.com's own site, a general web search) - all
+  confirm none is accessible, a genuine data gap rather than an unsearched one (see `results.md`).
   Spot-checked against Phase 3's own independently-generated translations and found close,
   sometimes near-verbatim agreement.
 
