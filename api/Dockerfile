@@ -8,6 +8,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# Official tensorflow-cpu PyPI wheels require AVX and segfault (exit 139) at runtime on CPUs
+# without it - hit for real on this project's Unraid host, a Xeon W3680 (Westmere, 2010), one
+# generation before AVX was introduced (Sandy Bridge, 2011). No BIOS setting fixes this - it's a
+# true silicon limitation. Using a community wheel built specifically -march=westmere instead of
+# pip's own tensorflow-cpu==2.10.0 (github.com/sld/docker-tensorflow-builder-next, release 2.12,
+# aka yaroslavvb/tensorflow-community-wheels#221) - bumps TF 2.10.0 -> 2.12.0, verified safe since
+# nomnaocr_lib/model.py's Keras usage was already written to be portable across both Keras 2 (this
+# range) and Keras 3 (Kaggle's TF 2.20 default) - see its vocabulary_size()/.shape comments - and
+# re-confirmed end to end against a real sample image in this change (see commit message).
+RUN pip install --no-cache-dir https://github.com/sld/docker-tensorflow-builder-next/releases/download/2.12/tensorflow-2.12.0-cp310-cp310-linux_x86_64.whl
+
 # Build context is the repo root (docker build -f api/Dockerfile .), not api/ itself - every
 # COPY below is written relative to that, including this one.
 COPY api/requirements.txt .

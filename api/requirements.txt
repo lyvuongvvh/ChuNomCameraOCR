@@ -1,6 +1,8 @@
 # kraken + tensorflow-cpu coexistence confirmed in one Python 3.10 env
 # (experiments/phase4_detection/docker/Dockerfile, README.md's "kraken + TF coexistence check").
-tensorflow-cpu==2.10.0
+# tensorflow-cpu itself is NOT listed here - official PyPI wheels require AVX and segfault
+# (exit 139) on hosts without it (found running on a Xeon W3680/Westmere, pre-dates AVX). Installed
+# in api/Dockerfile instead, from a community wheel built for that case.
 kraken==4.3.13
 shapely
 pillow
