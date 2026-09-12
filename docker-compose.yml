@@ -4,9 +4,8 @@
 #      and published to GHCR - this compose file only ever pulls that image, never builds locally.
 #      Publishes port 8000 on the host so a separately-run Cloudflare Tunnel container (not part
 #      of this stack - see README/chat instructions for pointing an existing tunnel at this
-#      container) can reach it.
-# watchtower: polls GHCR for a newer `latest` tag and auto-recreates ONLY the api container when
-#      one appears - the command arg restricts it to that one container.
+#      container) can reach it. No watchtower/auto-update here - redeploy manually (Compose Pull +
+#      Compose Up in Compose Manager Plus) after a push builds a new image via GitHub Actions.
 #
 # Weights/models (recognizer .h5, char_lm.json, best_lambda.json, reading_dict.json, the Rung 1
 # detection checkpoint) are gitignored (see .gitignore) and not baked into the image - copy your
@@ -39,13 +38,3 @@ services:
       - ${EXPERIMENTS_DIR}/phase4_detection/data:/app/experiments/phase4_detection/data:ro
     env_file:
       - .env
-
-  watchtower:
-    image: containrrr/watchtower:latest
-    container_name: nomocr-watchtower
-    restart: unless-stopped
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - WATCHTOWER_CLEANUP=true
-    command: --interval 300 nomocr-api
