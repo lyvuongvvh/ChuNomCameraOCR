@@ -20,6 +20,16 @@ WORKDIR /app
 # re-confirmed end to end against a real sample image in this change (see commit message).
 RUN pip install --no-cache-dir https://github.com/sld/docker-tensorflow-builder-next/releases/download/2.12/tensorflow-2.12.0-cp310-cp310-linux_x86_64.whl
 
+# This TF wheel pulls in jax/jaxlib as one of its own declared dependencies (`pip show jax` ->
+# Required-by: tensorflow). tensorflow/lite/python/util.py imports jax inside try/except
+# ImportError, but that only guards against jax being ABSENT - the officially-published PyPI
+# jaxlib wheel has this exact same AVX requirement as tensorflow-cpu did, and raises RuntimeError
+# (not ImportError) at import time on a no-AVX host, which isn't caught, taking down `import
+# tensorflow` itself (found running this on the same Unraid/Westmere host as the segfault above).
+# We never use jax/TFLite conversion here - removing it makes that import a genuine ImportError,
+# which the try/except does handle correctly, independent of the host's CPU.
+RUN pip uninstall -y jax jaxlib
+
 # Build context is the repo root (docker build -f api/Dockerfile .), not api/ itself - every
 # COPY below is written relative to that, including this one.
 COPY api/requirements.txt .
