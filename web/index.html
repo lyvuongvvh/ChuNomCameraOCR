@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Chữ Nôm Camera OCR</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Chữ Nôm Camera OCR</h1>
+    <p class="subtitle">Chụp ảnh chữ Nôm để nhận dạng và dịch nghĩa.</p>
+  </header>
+
+  <main>
+    <section id="capture-section">
+      <label class="capture-button" for="photo-input">
+        <span id="capture-label">📷 Chụp ảnh / Take Photo</span>
+      </label>
+      <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
+      <img id="preview" alt="Captured page preview" hidden>
+    </section>
+
+    <section id="status-section" hidden>
+      <p id="status-text"></p>
+    </section>
+
+    <section id="results-section" hidden>
+      <div id="results-summary"></div>
+      <ul id="line-list"></ul>
+      <div id="translate-controls" hidden>
+        <button id="select-all-btn" type="button">Select all</button>
+        <button id="translate-btn" type="button">Translate selected</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Works in any mobile browser. Installing to your home screen is optional - this app's
+    camera capture doesn't depend on it.</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

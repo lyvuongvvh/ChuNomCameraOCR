@@ -1,0 +1,13 @@
+{
+  "name": "Chữ Nôm Camera OCR",
+  "short_name": "Nôm OCR",
+  "description": "Camera-based recognition and translation of Chữ Nôm text.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#faf7f2",
+  "theme_color": "#8a3324",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

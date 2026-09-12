@@ -1,0 +1,88 @@
+:root {
+  --bg: #faf7f2;
+  --fg: #2a2420;
+  --accent: #8a3324;
+  --accent-fg: #ffffff;
+  --border: #d9cfc2;
+  --error: #b3261e;
+  --muted: #6b6258;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+header { text-align: center; margin-bottom: 1.5rem; }
+header h1 { margin: 0.25rem 0; font-size: 1.5rem; }
+.subtitle { color: var(--muted); margin: 0; }
+
+.capture-button {
+  display: block;
+  text-align: center;
+  padding: 1rem;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-radius: 0.75rem;
+  font-size: 1.1rem;
+  cursor: pointer;
+  user-select: none;
+}
+.capture-button:active { opacity: 0.85; }
+
+#preview:not([hidden]) {
+  display: block;
+  max-width: 100%;
+  margin-top: 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+}
+
+#status-section { margin: 1rem 0; text-align: center; color: var(--muted); }
+
+#results-summary { margin: 1rem 0 0.5rem; color: var(--muted); font-size: 0.9rem; }
+
+#line-list { list-style: none; padding: 0; margin: 0; }
+
+.line-item {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  margin-bottom: 0.6rem;
+  background: white;
+}
+
+.line-item.has-error { border-color: var(--error); background: #fff5f4; }
+
+.line-row { display: flex; align-items: flex-start; gap: 0.5rem; }
+.line-row input[type="checkbox"] { margin-top: 0.3rem; }
+.line-text { font-size: 1.2rem; flex: 1; }
+.line-error { color: var(--error); font-size: 0.85rem; margin: 0.25rem 0 0; }
+
+.line-translation { margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px dashed var(--border); }
+.line-reading { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.25rem; }
+.line-translation-text { margin: 0; }
+.line-translation-status { font-size: 0.85rem; color: var(--muted); }
+.line-translation-status.status-error { color: var(--error); }
+
+#translate-controls:not([hidden]) { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+#translate-controls button {
+  flex: 1;
+  padding: 0.6rem;
+  border: 1px solid var(--accent);
+  background: white;
+  color: var(--accent);
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  cursor: pointer;
+}
+#translate-btn { background: var(--accent); color: var(--accent-fg); }
+
+footer { margin-top: 2rem; text-align: center; color: var(--muted); font-size: 0.8rem; }
