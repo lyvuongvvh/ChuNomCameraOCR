@@ -10,11 +10,19 @@
 #
 # Weights/models (recognizer .h5, char_lm.json, best_lambda.json, reading_dict.json, the Rung 1
 # detection checkpoint) are gitignored (see .gitignore) and not baked into the image - copy your
-# local experiments/ tree to EXPERIMENTS_DIR (set in .env) on the Unraid host before
+# local experiments/ data folders to EXPERIMENTS_DIR (set in .env) on the Unraid host before
 # `docker compose up`. EXPERIMENTS_DIR is an absolute host path, not a relative one, since GUI
 # compose managers (e.g. Unraid's Compose Manager Plus) run this file from their own project
 # directory, not this repo checkout - a relative ./experiments would resolve against the wrong
 # base and silently mount an empty directory.
+#
+# Each data folder is mounted individually (NOT the whole experiments/ tree as one bind mount) -
+# a bind mount REPLACES whatever the image already has at that exact target path, so mounting the
+# whole tree over /app/experiments would silently delete the nomnaocr_lib/lm/translate_lib/
+# detect_lib code packages the Dockerfile COPYs in there, breaking every import at startup
+# (`ModuleNotFoundError: No module named 'nomnaocr_lib'`, discovered running this on Unraid).
+# Mounting only these leaf data directories leaves the sibling code directories the image already
+# has untouched.
 
 services:
   api:
@@ -24,7 +32,11 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ${EXPERIMENTS_DIR}:/app/experiments:ro
+      - ${EXPERIMENTS_DIR}/NomNaOCR_H5:/app/experiments/NomNaOCR_H5:ro
+      - ${EXPERIMENTS_DIR}/NomNaOCR:/app/experiments/NomNaOCR:ro
+      - ${EXPERIMENTS_DIR}/phase2b_postcorrection/data:/app/experiments/phase2b_postcorrection/data:ro
+      - ${EXPERIMENTS_DIR}/phase3_translation/data:/app/experiments/phase3_translation/data:ro
+      - ${EXPERIMENTS_DIR}/phase4_detection/data:/app/experiments/phase4_detection/data:ro
     env_file:
       - .env
 
