@@ -12,6 +12,7 @@ import pathlib
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from api.config import settings
@@ -29,11 +30,25 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ChuNomCameraOCR API", lifespan=lifespan)
+
+# Only matters when the frontend is served from a different origin than this API (e.g. web/ on
+# Cloudflare Pages, this API behind a Cloudflare Tunnel) - the default same-origin deployment
+# (this app serving web/ itself, via the mount below) never triggers a browser CORS check at all,
+# so this is a no-op there. No credentials/cookies are used by this API, so a wildcard default is
+# safe; set ALLOWED_ORIGINS to your real Pages URL for a split deployment.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+
 app.include_router(health.router)
 app.include_router(ocr.router)
 
 # Registered last and mounted at "/": Starlette resolves routes in registration order, so the
 # specific /healthz and /v1/ocr paths above must come first or this catch-all static mount would
-# shadow them. Serves the Phase 5 frontend (web/) from this same process/port - same-origin, so
-# web/app.js's fetch("/v1/ocr") calls need no CORS configuration.
+# shadow them. Serves the Phase 5 frontend (web/) from this same process/port when deployed
+# together (same-origin, no CORS needed); harmless if you instead host web/ elsewhere (e.g.
+# Cloudflare Pages) and never hit "/" on this server at all.
 app.mount("/", StaticFiles(directory=str(_WEB_DIR), html=True), name="web")

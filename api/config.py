@@ -54,5 +54,14 @@ class Settings:
             _EXPERIMENTS / "phase4_detection" / "data" / "rung1_model" / "segtrain_finetuned_best.mlmodel",
         )
 
+        # CORS (Phase 5, split-hosting option): only needed when the frontend is served from a
+        # different origin than this API (e.g. web/ on Cloudflare Pages, this API on a Cloudflare
+        # Tunnel URL) - same-origin deployment (api/main.py serving web/ itself, the default)
+        # never triggers a CORS check at all, so "*" here is harmless in that mode. Comma-separated
+        # origins, e.g. "https://my-app.pages.dev,https://my-custom-domain.com".
+        self.allowed_origins = [
+            o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",") if o.strip()
+        ]
+
 
 settings = Settings()

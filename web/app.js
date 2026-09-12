@@ -45,7 +45,7 @@ photoInput.addEventListener("change", async () => {
     const formData = new FormData();
     formData.append("file", capturedFile);
     formData.append("translate", "false");
-    const resp = await fetch("/v1/ocr", { method: "POST", body: formData });
+    const resp = await fetch(`${API_BASE_URL}/v1/ocr`, { method: "POST", body: formData });
     if (!resp.ok) {
       setStatus(`Lỗi (${resp.status}): ${await resp.text()}`);
       return;
@@ -169,7 +169,7 @@ translateBtn.addEventListener("click", async () => {
     formData.append("file", capturedFile);
     formData.append("translate", "true");
     formData.append("translate_line_ids", checkedIds.join(","));
-    const resp = await fetch("/v1/ocr", { method: "POST", body: formData });
+    const resp = await fetch(`${API_BASE_URL}/v1/ocr`, { method: "POST", body: formData });
     if (!resp.ok) {
       setStatus(`Lỗi (${resp.status}): ${await resp.text()}`);
       return;
