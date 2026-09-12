@@ -9,4 +9,4 @@
 // own origin (see api/config.py) for the browser's CORS check to pass, and the API must be
 // reachable over HTTPS, not just plain HTTP, or an HTTPS-served page like a Cloudflare Pages site
 // will have this fetch blocked as mixed content.
-const API_BASE_URL = "";
+const API_BASE_URL = "https://api.viethoc.net";
