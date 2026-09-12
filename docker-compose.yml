@@ -12,7 +12,11 @@
 #
 # Weights/models (recognizer .h5, char_lm.json, best_lambda.json, reading_dict.json, the Rung 1
 # detection checkpoint) are gitignored (see .gitignore) and not baked into the image - copy your
-# local experiments/ tree to this same relative path on the Unraid host before `docker compose up`.
+# local experiments/ tree to EXPERIMENTS_DIR (set in .env) on the Unraid host before
+# `docker compose up`. EXPERIMENTS_DIR is an absolute host path, not a relative one, since GUI
+# compose managers (e.g. Unraid's Compose Manager Plus) run this file from their own project
+# directory, not this repo checkout - a relative ./experiments would resolve against the wrong
+# base and silently mount an empty directory.
 
 services:
   api:
@@ -22,7 +26,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./experiments:/app/experiments:ro
+      - ${EXPERIMENTS_DIR}:/app/experiments:ro
     env_file:
       - .env
 
