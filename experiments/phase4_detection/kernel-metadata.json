@@ -1,0 +1,13 @@
+{
+  "id": "lyvuongvvh/phase4-detection-segtrain",
+  "title": "phase4-detection-segtrain",
+  "code_file": "kaggle_train.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["lyvuongvvh/phase4-detection-segtrain-data"],
+  "competition_sources": [],
+  "kernel_sources": []
+}

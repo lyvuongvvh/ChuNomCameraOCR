@@ -5,6 +5,8 @@ experiments/phase0_validation/kaggle_dataset/
 experiments/phase0_validation/kaggle_output/
 experiments/phase2c_finetune/kaggle_dataset/
 experiments/phase2c_finetune/kaggle_output/
+experiments/phase4_detection/kaggle_dataset/
+experiments/phase4_detection/kaggle_run_output/
 *.mlmodel
 *.h5
 *.pb

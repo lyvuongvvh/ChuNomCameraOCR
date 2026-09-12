@@ -158,14 +158,68 @@ locally. Per Phase 0/2c's own precedent (Kaggle GPU for the recognizer's fine-tu
 Rung 1 run should move to Kaggle GPU, reusing `experiments/phase2c_finetune`'s
 `kernel-metadata.json` + Kaggle Kernels API push/pull pattern rather than inventing a new one.
 
+## Rung 1: real run on Kaggle GPU - passes the bar
+
+**Training set:** `scripts/build_segtrain_data.py --stratify-per-work 150` produced 1,191 pages
+(18,886 lines) across all 9 works (104-150/work, capped so DVSKTT-3's 932 available pages don't
+dominate), excluding the 15-page evaluation sample entirely.
+
+**Two Kaggle-specific environment issues, found and fixed via small trials before committing to
+the real run:**
+- `ketos segtrain` needs Python <=3.11 (Kaggle's default kernel Python is 3.12) and no `conda` is
+  on `PATH` by default - fixed by installing a self-contained Miniconda + Python 3.10 env under
+  `/opt` (reusing the exact same workaround already proven in
+  `experiments/phase0_validation/chat_finetune_trial.ipynb`), plus `setuptools<81` (a dropped
+  `pkg_resources` namespace pattern kraken's old `pytorch_lightning` still needs) and `rich<13.4`
+  (Kaggle's own dependency resolution needed a tighter pin than the `rich<14` that was sufficient
+  locally - not assumed to carry over unchecked).
+- What looked like an indefinite hang (zero log output for 35-65+ minutes at 300 and 1,191 pages,
+  despite completing fine at 34 pages) turned out to be **two separate, now-resolved issues**:
+  (1) `/kaggle/input` datasets are commonly FUSE/network-mounted, and kraken's per-page dataset
+  construction opens each page's image+XML individually - a real ~8s/page latency at that scale,
+  confirmed by measuring a 34-page run and comparing to the same page count loading in seconds
+  locally on CPU. Fixed by bulk-copying the dataset to local disk first (`shutil.copytree`,
+  ~10-15s for the full 1,191 pages, vs. an extrapolated ~2.7 hours left on the remote mount).
+  (2) Even after that fix, training silently made real progress that never surfaced through
+  Jupyter's `!{cmd}` shell-capture into Kaggle's log endpoint or web UI - a pure monitoring blind
+  spot, confirmed by re-running with `ketos segtrain` launched as a background `subprocess.Popen`
+  writing to its own file, polled and `print()`-ed explicitly every 30s. That surfaced real,
+  steady per-epoch checkpoint progress (~90s/epoch at 300 pages) that had been happening the whole
+  time - the earlier "hangs" were never real; a full 1,191-page run had already been killed once
+  based on this false signal before this was caught.
+
+**Result:** with the above two fixes, the real run (1,191 pages, `-i blla.mlmodel --resize both
+--suppress-regions -q early --min-epochs 5 --lag 10 -N 50`, Tesla P100) trained 38 epochs
+(~6.6 min/epoch, ~4.2 hours total) and early-stopped 10 epochs after its best
+(`--lag 10`, exactly as configured) - never needed the `-N 50` hard cap. Best epoch **27**,
+`val_mean_iu = 0.306` - well above the 34-page single-work trial's 0.231, consistent with more
+data continuing to help.
+
+**Scored against the same 15-page held-out sample and `score_detection.py` used throughout,
+raw output, no `merge_by_xposition` post-processing at all:**
+
+```
+mean recall:    0.902  (bar: >= 0.90)
+mean precision: 0.887  (bar: >= 0.70)
+PASSES the good-enough-to-proceed bar
+```
+
+Per-page breakdown confirms this is genuine cross-work generalization, not a DVSKTT-only repeat
+of Rung 0's result: **all 4 non-DVSKTT pages that scored exactly 0.000/0.000 under Rung 0**
+(Luc Van Tien, Tale of Kieu 1866/1871/1872 - the pages whose different scan characteristics broke
+Rung 0's x-position merge heuristic) now score **0.917-1.000** recall and precision. DVSKTT pages
+mostly score 0.667-1.000, matching or exceeding Rung 0's own tuning-page performance; the single
+weak page is `DVSKTT_ngoai_I_3a` at recall=0.500/precision=0.556 - a residual gap worth revisiting
+later, but not disqualifying given the aggregate clears both bars with margin.
+
 ## Status
 
-Rung 0 (kraken generic segmenter + x-position merge) closed out: does not pass, root cause is a
-heuristic that doesn't generalize across this dataset's different scan sources, not a threshold
-value.
+**Rung 0 closed out: does not pass** - kraken's generic segmenter + x-position merge heuristic
+doesn't generalize across this dataset's different scan sources, not a threshold-tuning problem.
 
-Rung 1 (`ketos segtrain` fine-tuning) scoping in progress: pipeline mechanically validated,
-fine-tuning-from-bundled-weights confirmed to produce a real, improving signal (as opposed to
-training from scratch, which does not work at this scale) on one work. Not yet done: a
-work-stratified training set, an early-stopping / epoch-budget policy (still climbing after only
-3 epochs - unclear how many are actually needed), and moving the real run to Kaggle GPU.
+**Rung 1 (`ketos segtrain` fine-tuning): passes.** Fine-tuning kraken's bundled segmentation model
+on a 1,191-page, all-9-works stratified sample reaches mean recall=0.902/precision=0.887 on the
+held-out sample - clears the recall>=0.90/precision>=0.70 bar, and specifically fixes the
+cross-work generalization failure that sank Rung 0. Detection for Phase 4 is validated;
+`segtrain_finetuned_best.mlmodel` (epoch 27) is the candidate to promote into `api/pipeline/
+detection.py` per the approved plan. Rung 2 (a dedicated pretrained detector) is not needed.

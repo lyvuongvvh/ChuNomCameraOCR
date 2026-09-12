@@ -9,19 +9,31 @@ from the training set entirely - mirrors Phase 0's own documented Train/Validate
 fix (build_finetune_data.py's docstring): the pages used to judge whether Rung 1 clears the bar
 must never have been seen during Rung 1's own training.
 
+Each page's image is copied into --out-dir alongside its XML (imageFilename is a bare basename,
+not an absolute host path) - self-contained, same convention build_finetune_data.py uses, so the
+resulting folder is portable to a Kaggle Dataset upload unchanged.
+
+--stratify-per-work caps how many pages any single work contributes (random, seeded), since the
+9 works range from 100 to 932 pages (see README.md) - without it, a manifest-order --limit-pages
+would just take the alphabetically-first work's pages, which is exactly what the Rung 1 sanity
+trial did and is explicitly NOT what the real run needs (see README.md's "important caveat").
+
 Usage:
     python scripts/build_segtrain_data.py \
         --manifest data/manifest.json \
         --exclude-manifest data/manifest_sample15.json \
-        --out-dir data/segtrain_pagexml \
-        --limit-pages 50
+        --out-dir data/segtrain_pagexml_full \
+        --stratify-per-work 150
 """
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import pathlib
+import random
 import re
+import shutil
 from xml.sax.saxutils import escape
 
 from PIL import Image
@@ -55,26 +67,43 @@ def main() -> None:
                      help="Pages in this manifest are held out - never written as training data.")
     ap.add_argument("--out-dir", required=True, type=pathlib.Path)
     ap.add_argument("--limit-pages", type=int, default=None,
-                     help="Cap total pages written - for a fast sanity trial, not the full run.")
+                     help="Cap total pages written, taken in manifest order - for a fast sanity "
+                          "trial only. Prefer --stratify-per-work for a real training set.")
+    ap.add_argument("--stratify-per-work", type=int, default=None,
+                     help="Cap pages per work (random sample, seed 0) so no single large work "
+                          "dominates the training set. Mutually exclusive with --limit-pages.")
     args = ap.parse_args()
+
+    if args.limit_pages is not None and args.stratify_per_work is not None:
+        raise SystemExit("pass at most one of --limit-pages / --stratify-per-work")
 
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     exclude = json.loads(args.exclude_manifest.read_text(encoding="utf-8"))
     exclude_keys = {(e["work"], e["page_name"]) for e in exclude}
 
+    entries = [e for e in manifest if (e["work"], e["page_name"]) not in exclude_keys]
+    skipped_excluded = len(manifest) - len(entries)
+
+    if args.stratify_per_work is not None:
+        by_work: dict[str, list] = collections.defaultdict(list)
+        for e in entries:
+            by_work[e["work"]].append(e)
+        rng = random.Random(0)
+        selected = []
+        for work, work_entries in sorted(by_work.items()):
+            rng.shuffle(work_entries)
+            selected.extend(work_entries[:args.stratify_per_work])
+        entries = selected
+    elif args.limit_pages is not None:
+        entries = entries[:args.limit_pages]
+
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     total_pages = 0
     total_lines = 0
-    skipped_excluded = 0
     skipped_no_lines = 0
-    for entry in manifest:
-        if args.limit_pages is not None and total_pages >= args.limit_pages:
-            break
-        key = (entry["work"], entry["page_name"])
-        if key in exclude_keys:
-            skipped_excluded += 1
-            continue
+    per_work_written: dict[str, int] = collections.defaultdict(int)
+    for entry in entries:
         quads = entry["gt_quads"]
         if not quads:
             skipped_no_lines += 1
@@ -85,6 +114,9 @@ def main() -> None:
             width, height = img.size
 
         out_stem = f"{sanitize(entry['work'])}_{entry['page_name']}"
+        out_img_name = f"{out_stem}.jpg"
+        shutil.copyfile(img_path, args.out_dir / out_img_name)
+
         line_xmls = []
         for i, q in enumerate(quads):
             (x1, y1), (x2, y2), (x3, y3), (x4, y4) = q["points"]
@@ -100,14 +132,17 @@ def main() -> None:
             total_lines += 1
 
         xml_content = PAGE_XML_TEMPLATE.format(
-            image_filename=str(img_path.resolve()), width=width, height=height,
+            image_filename=out_img_name, width=width, height=height,
             lines="\n".join(line_xmls),
         )
         (args.out_dir / f"{out_stem}.xml").write_text(xml_content, encoding="utf-8")
         total_pages += 1
+        per_work_written[entry["work"]] += 1
 
     print(f"Wrote {total_pages} PageXML files ({total_lines} lines) to {args.out_dir}")
     print(f"Excluded {skipped_excluded} held-out eval pages, skipped {skipped_no_lines} pages with no GT lines")
+    for work, n in sorted(per_work_written.items()):
+        print(f"  {work:30s} {n:5d}")
 
 
 if __name__ == "__main__":
