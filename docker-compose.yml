@@ -1,14 +1,12 @@
-# Unraid / any Docker host deployment for the split "Pages + Tunnel" architecture.
+# Unraid / any Docker host deployment for the API, split-hosting-ready (Pages + Tunnel).
 #
 # api: the FastAPI backend, built by .github/workflows/docker-publish.yml on every push to main
 #      and published to GHCR - this compose file only ever pulls that image, never builds locally.
-# cloudflared: exposes `api` over real HTTPS without opening any port on your router. Point this
-#      tunnel's Public Hostname origin at http://api:8000 (the compose service name, resolved via
-#      Docker's internal network), NOT localhost:8000 or the Unraid host IP - cloudflared runs in
-#      its own container and only sees other services through this compose network.
+#      Publishes port 8000 on the host so a separately-run Cloudflare Tunnel container (not part
+#      of this stack - see README/chat instructions for pointing an existing tunnel at this
+#      container) can reach it.
 # watchtower: polls GHCR for a newer `latest` tag and auto-recreates ONLY the api container when
-#      one appears - the command arg restricts it to that one container so cloudflared/watchtower
-#      itself are never touched by it.
+#      one appears - the command arg restricts it to that one container.
 #
 # Weights/models (recognizer .h5, char_lm.json, best_lambda.json, reading_dict.json, the Rung 1
 # detection checkpoint) are gitignored (see .gitignore) and not baked into the image - copy your
@@ -29,14 +27,6 @@ services:
       - ${EXPERIMENTS_DIR}:/app/experiments:ro
     env_file:
       - .env
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: nomocr-cloudflared
-    restart: unless-stopped
-    command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
-    depends_on:
-      - api
 
   watchtower:
     image: containrrr/watchtower:latest
