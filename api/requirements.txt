@@ -1,0 +1,18 @@
+# kraken + tensorflow-cpu coexistence confirmed in one Python 3.10 env
+# (experiments/phase4_detection/docker/Dockerfile, README.md's "kraken + TF coexistence check").
+tensorflow-cpu==2.10.0
+kraken==4.3.13
+shapely
+pillow
+fastapi
+uvicorn[standard]
+pydantic
+python-multipart
+anthropic
+
+# kraken's own dependency pin leaves rich unbounded; pip resolves it to rich>=15, which is
+# incompatible with the pytorch_lightning version kraken pulls in at training/fine-tuning time
+# (experiments/phase4_detection/README.md). Not exercised by this API (pure inference, no
+# ketos/pytorch_lightning training path), but pinned anyway for a consistent, already-validated
+# dependency set across the two Dockerfiles.
+rich<14
