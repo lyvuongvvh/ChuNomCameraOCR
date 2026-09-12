@@ -1,0 +1,35 @@
+name: Build and publish API image
+
+# Builds api/Dockerfile (context = repo root, matching its own COPY paths) and pushes it to GHCR
+# as `latest` on every push to main. docker-compose.yml on the Unraid host pulls this image, and
+# watchtower there polls for and auto-deploys new `latest` tags - so a push to main here is the
+# entire "deploy" step; nothing further needs to run on the Unraid box.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: api/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/chunomcameraocr-api:latest

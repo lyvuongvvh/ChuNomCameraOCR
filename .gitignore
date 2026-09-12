@@ -24,3 +24,6 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# Deployment secrets (docker-compose.yml's env_file) - see .env.example for the template
+.env
