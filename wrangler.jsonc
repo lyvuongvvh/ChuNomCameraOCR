@@ -1,0 +1,12 @@
+// Deploys web/ (Phase 5's PWA frontend) as a static-assets Worker - no Worker script needed,
+// this is a pure static site. Used by the Cloudflare dashboard's "Connect to Git" flow, which
+// now creates a Worker project (defaulting to `npx wrangler deploy`) rather than the older,
+// separate classic Pages UI - `wrangler deploy` picks this file up automatically from the repo
+// root on every push, redeploying web/'s contents.
+{
+  "name": "chunomcameraocr",
+  "compatibility_date": "2026-09-12",
+  "assets": {
+    "directory": "./web"
+  }
+}
